@@ -1,0 +1,309 @@
+[/workspaces/default/code/src/App.tsx#367d]
+1:import { useState } from "react";
+2:
+3:type Page = "home" | "directory" | "detail" | "verify" | "pricing";
+4:type IconName =
+5:  | "search"
+6:  | "pin"
+7:  | "users"
+8:  | "check"
+9:  | "shield"
+10:  | "arrow"
+11:  | "phone"
+12:  | "mail"
+13:  | "clock"
+14:  | "qr"
+15:  | "chart"
+16:  | "home"
+17:  | "wifi"
+18:  | "pool"
+19:  | "car"
+20:  | "kitchen"
+21:  | "bed"
+22:  | "info"
+23:  | "close";
+24:
+25:const photos = [
+26:  "https://images.unsplash.com/photo-1658211342697-58df7f68ed0c?auto=format&fit=crop&w=1200&q=86",
+27:  "https://images.unsplash.com/photo-1584792328860-561368eca401?auto=format&fit=crop&w=1200&q=86",
+28:  "https://images.unsplash.com/photo-1671340455400-b8c676bd7c48?auto=format&fit=crop&w=1200&q=86",
+29:  "https://images.unsplash.com/photo-1756115377696-0bdbf1c21a02?auto=format&fit=crop&w=1200&q=86",
+30:];
+31:
+32:const villas = [
+33:  { name: "Sea Sky Pool Villa", province: "ชลบุรี", guests: "12 คน", status: "ยืนยันแล้ว", updated: "18 มิ.ย. 2568", image: photos[0] },
+34:  { name: "Khao Yai Forest Pool", province: "นครราชสีมา", guests: "10 คน", status: "ยืนยันแล้ว", updated: "16 มิ.ย. 2568", image: photos[1] },
+35:  { name: "Hua Hin Blue House", province: "ประจวบคีรีขันธ์", guests: "8 คน", status: "ยืนยันแล้ว", updated: "12 มิ.ย. 2568", image: photos[2] },
+36:  { name: "Phuket Ocean Residence", province: "ภูเก็ต", guests: "14 คน", status: "รอตรวจสอบ", updated: "08 มิ.ย. 2568", image: photos[3] },
+37:];
+38:
+39:function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
+40:  const paths: Record<IconName, React.ReactNode> = {
+41:    search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
+42:    pin: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></>,
+43:    users: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
+44:    check: <path d="m5 12 4 4L19 6" />,
+45:    shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" /><path d="m9 12 2 2 4-5" /></>,
+46:    arrow: <><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></>,
+47:    phone: <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.78.62 2.63a2 2 0 0 1-.45 2.11L8 9.73a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.85.3 1.73.5 2.63.62A2 2 0 0 1 22 16.92Z" />,
+48:    mail: <><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 7L2 7" /></>,
+49:    clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+50:    qr: <><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><path d="M14 14h3v3h-3zM18 18h3v3h-3zM18 13h3M13 20h3" /></>,
+51:    chart: <><path d="M4 19V9M10 19V4M16 19v-7M22 19H2" /></>,
+52:    home: <><path d="m3 11 9-8 9 8" /><path d="M5 10v11h14V10M9 21v-7h6v7" /></>,
+53:    wifi: <><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0" /><circle cx="12" cy="20" r="1" /></>,
+54:    pool: <><path d="M2 15c2 0 2 2 4 2s2-2 4-2 2 2 4 2 2-2 4-2 2 2 4 2M2 20c2 0 2 2 4 2s2-2 4-2 2 2 4 2 2-2 4-2 2 2 4 2M7 15V5a3 3 0 0 1 6 0M7 10h6" /></>,
+55:    car: <><path d="M5 17h14l1-5-2-5H6l-2 5 1 5Z" /><circle cx="7" cy="18" r="2" /><circle cx="17" cy="18" r="2" /></>,
+56:    kitchen: <><path d="M6 3v8M3 3v5a3 3 0 0 0 6 0V3M6 11v10M16 3v18M16 3c4 2 5 8 0 10" /></>,
+57:    bed: <><path d="M3 20v-8h18v8M3 16h18M7 12V8h5a4 4 0 0 1 4 4" /></>,
+58:    info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7h.01" /></>,
+59:    close: <><path d="m6 6 12 12M18 6 6 18" /></>,
+60:  };
+61:  return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
+62:}
+63:
+64:function Logo({ light = false }: { light?: boolean }) {
+65:  return <div className={`logo ${light ? "logo-light" : ""}`}><span className="logo-mark"><Icon name="shield" size={24} /></span><span>Villa<span>Check</span></span></div>;
+66:}
+67:
+68:function Badge({ pending = false, children = "ตรวจสอบแล้ว" }: { pending?: boolean; children?: React.ReactNode }) {
+69:  return <span className={`badge ${pending ? "badge-pending" : ""}`}><span className="badge-icon"><Icon name={pending ? "clock" : "check"} size={12} /></span>{children}</span>;
+70:}
+71:
+72:function Header({ page, go }: { page: Page; go: (page: Page) => void }) {
+73:  return <header className="header">
+74:    <div className="container nav">
+75:      <button className="logo-button" onClick={() => go("home")}><Logo /></button>
+76:      <nav>
+77:        <button className={page === "home" ? "active" : ""} onClick={() => go("home")}>หน้าหลัก</button>
+78:        <button className={page === "directory" || page === "detail" ? "active" : ""} onClick={() => go("directory")}>ค้นหาวิลล่า</button>
+79:        <button onClick={() => document.getElementById("how")?.scrollIntoView({ behavior: "smooth" })}>วิธีการทำงาน</button>
+80:        <button className={page === "pricing" ? "active" : ""} onClick={() => go("pricing")}>แพ็กเกจเจ้าของที่พัก</button>
+81:      </nav>
+82:      <button className="outline-button" onClick={() => go("verify")}><Icon name="qr" size={17} /> ตรวจสอบ QR</button>
+83:    </div>
+84:  </header>;
+85:}
+86:
+87:function VillaCard({ villa, onClick }: { villa: typeof villas[0]; onClick: () => void }) {
+88:  return <article className="villa-card" onClick={onClick}>
+89:    <div className="card-image"><img src={villa.image} alt={`ภาพ ${villa.name}`} /><Badge pending={villa.status !== "ยืนยันแล้ว"}>{villa.status}</Badge></div>
+90:    <div className="card-body">
+91:      <h3>{villa.name}</h3>
+92:      <div className="villa-meta"><span><Icon name="pin" size={17} />{villa.province}</span><span><Icon name="users" size={17} />สูงสุด {villa.guests}</span></div>
+93:      <div className="card-foot"><span><Icon name="clock" size={15} />อัปเดตล่าสุด {villa.updated}</span><button aria-label={`ดู ${villa.name}`}><Icon name="arrow" size={18} /></button></div>
+94:    </div>
+95:  </article>;
+96:}
+97:
+98:function SearchBox({ go }: { go: (p: Page) => void }) {
+99:  return <div className="search-box">
+100:    <label><span>ชื่อวิลล่าหรือที่พัก</span><div><Icon name="search" /><input placeholder="ค้นหาชื่อวิลล่า..." /></div></label>
+101:    <label><span>จังหวัด</span><div><Icon name="pin" /><select defaultValue=""><option value="" disabled>เลือกจังหวัด</option><option>ชลบุรี</option><option>นครราชสีมา</option><option>ประจวบคีรีขันธ์</option><option>ภูเก็ต</option></select></div></label>
+102:    <button className="primary-button" onClick={() => go("directory")}><Icon name="search" size={18} />ค้นหา</button>
+103:  </div>;
+104:}
+105:
+106:function Home({ go }: { go: (p: Page) => void }) {
+107:  return <>
+108:    <section className="hero">
+109:      <div className="hero-orb hero-orb-one" /><div className="hero-orb hero-orb-two" />
+110:      <div className="container hero-grid">
+111:        <div className="hero-copy">
+112:          <div className="eyebrow"><Icon name="shield" size={16} />แพลตฟอร์มตรวจสอบที่พักที่เชื่อถือได้</div>
+113:          <h1>เช็กพูลวิลล่าก่อนโอน<br />เที่ยวอย่าง<span>มั่นใจ</span></h1>
+114:          <p>ตรวจสอบข้อมูลพูลวิลล่า ช่องทางติดต่อ และบัญชีรับเงินที่ผ่านการยืนยัน ลดความเสี่ยงก่อนตัดสินใจโอน</p>
+115:          <SearchBox go={go} />
+116:          <div className="trust-row"><span><Icon name="check" size={14} />ตรวจสอบฟรี</span><span><Icon name="check" size={14} />ไม่ต้องสมัครสมาชิก</span><span><Icon name="check" size={14} />ข้อมูลอัปเดตสม่ำเสมอ</span></div>
+117:        </div>
+118:        <div className="hero-visual">
+119:          <div className="hero-photo"><img src={photos[0]} alt="พูลวิลล่าสไตล์โมเดิร์นพร้อมสระว่ายน้ำ" /></div>
+120:          <div className="verified-float">
+121:            <span className="verified-seal"><Icon name="shield" size={30} /></span>
+122:            <div><strong>VERIFIED VILLA</strong><span>ยืนยันข้อมูลแล้ว</span><small>ตรวจสอบล่าสุด 18 มิ.ย. 2568</small></div>
+123:          </div>
+124:          <div className="stat-float"><strong>1,280+</strong><span>วิลล่าในระบบ</span></div>
+125:        </div>
+126:      </div>
+127:    </section>
+128:
+129:    <section className="section verified-section">
+130:      <div className="container">
+131:        <div className="section-head"><div><span className="kicker">VERIFIED DIRECTORY</span><h2>วิลล่าที่ตรวจสอบแล้ว</h2><p>ค้นหาที่พักที่มีตัวตนและข้อมูลติดต่อที่ผ่านการตรวจสอบจาก VillaCheck</p></div><button className="text-button" onClick={() => go("directory")}>ดูทั้งหมด <Icon name="arrow" size={18} /></button></div>
+132:        <div className="villa-grid">{villas.slice(0, 3).map(v => <VillaCard key={v.name} villa={v} onClick={() => go("detail")} />)}</div>
+133:      </div>
+134:    </section>
+135:
+136:    <section className="section how-section" id="how">
+137:      <div className="container">
+138:        <div className="center-head"><span className="kicker">HOW IT WORKS</span><h2>ตรวจสอบง่าย มั่นใจก่อนโอน</h2><p>VillaCheck ช่วยให้คุณตรวจสอบข้อมูลสำคัญได้ในไม่กี่ขั้นตอน</p></div>
+139:        <div className="steps">
+140:          {[["01", "search", "ค้นหาวิลล่า", "ค้นหาจากชื่อที่พักหรือเลือกจังหวัดที่ต้องการ"], ["02", "shield", "เช็ก Trust Profile", "ตรวจสอบสถานะ ข้อมูลติดต่อ และบัญชีทางการ"], ["03", "qr", "สแกน QR ยืนยัน", "เช็ก QR Verification ที่ได้รับจากเจ้าของที่พัก"]].map((s, i) =>
+141:            <div className="step" key={s[0]}><span className="step-no">{s[0]}</span><span className="step-icon"><Icon name={s[1] as IconName} size={28} /></span><h3>{s[2]}</h3><p>{s[3]}</p>{i < 2 && <span className="step-line"><Icon name="arrow" size={18} /></span>}</div>
+142:          )}
+143:        </div>
+144:      </div>
+145:    </section>
+146:
+147:    <section className="section qr-section">
+148:      <div className="container split-panel">
+149:        <div className="qr-copy"><span className="kicker light-kicker">QR VERIFICATION</span><h2>สแกนปุ๊บ รู้ปั๊บ<br />ว่าใช่ที่พักจริง</h2><p>ทุกวิลล่าที่ผ่านการตรวจสอบจะได้รับ QR เฉพาะสำหรับยืนยันตัวตน ใช้เช็กข้อมูลล่าสุดก่อนโอนได้ทันที</p><ul><li><Icon name="check" />ยืนยันชื่อและช่องทางติดต่อทางการ</li><li><Icon name="check" />เช็กบัญชีรับเงินแบบปกปิดข้อมูลบางส่วน</li><li><Icon name="check" />แสดงวันตรวจสอบและวันหมดอายุชัดเจน</li></ul><button className="white-button" onClick={() => go("verify")}>ทดลองตรวจสอบ QR <Icon name="arrow" size={18} /></button></div>
+150:        <div className="qr-demo">
+151:          <div className="phone-card">
+152:            <Logo /><div className="mini-qr"><QrPattern /></div><Badge>VERIFIED</Badge><h3>Sea Sky Pool Villa</h3><p>ชลบุรี · VC-TH-2025-01842</p><div className="mini-status"><Icon name="shield" /><div><span>สถานะการตรวจสอบ</span><strong>ยืนยันข้อมูลแล้ว</strong></div></div>
+153:          </div>
+154:        </div>
+155:      </div>
+156:    </section>
+157:
+158:    <section className="section owner-section">
+159:      <div className="container owner-grid">
+160:        <div><span className="kicker">FOR VILLA OWNERS</span><h2>สร้างความน่าเชื่อถือ<br />ให้ที่พักของคุณ</h2><p>เปลี่ยนความมั่นใจให้เป็นโอกาสทางธุรกิจ ด้วย Trust Profile, QR Verification และข้อมูลเชิงลึกที่ช่วยให้ลูกค้าตัดสินใจง่ายขึ้น</p><button className="primary-button" onClick={() => go("pricing")}>ดูแพ็กเกจทั้งหมด <Icon name="arrow" size={18} /></button></div>
+161:        <div className="feature-stack">
+162:          <div><span><Icon name="shield" /></span><p><strong>Trust Profile</strong>โปรไฟล์ที่พักพร้อมสถานะตรวจสอบ</p></div>
+163:          <div><span><Icon name="qr" /></span><p><strong>QR Verification</strong>QR เฉพาะสำหรับแชร์ให้ลูกค้าตรวจสอบ</p></div>
+164:          <div><span><Icon name="chart" /></span><p><strong>Analytics</strong>ดูสถิติการเข้าชมและการสแกน</p></div>
+165:        </div>
+166:      </div>
+167:    </section>
+168:
+169:    <section className="section pricing-preview">
+170:      <div className="container pricing-banner">
+171:        <div><span className="kicker">START BUILDING TRUST</span><h2>เริ่มต้นสร้าง Trust Profile ได้ฟรี</h2><p>รับ Basic Trust QR ฟรี 90 วัน ไม่มีค่าธรรมเนียมและยังไม่ต้องผูกบัตร</p></div>
+172:        <div><strong>ฟรี</strong><span>90 วัน</span><button className="sun-button" onClick={() => go("pricing")}>ดูรายละเอียดแพ็กเกจ</button></div>
+173:      </div>
+174:    </section>
+175:  </>;
+176:}
+177:
+178:function Directory({ go }: { go: (p: Page) => void }) {
+179:  const [query, setQuery] = useState("");
+180:  const filtered = villas.filter(v => v.name.toLowerCase().includes(query.toLowerCase()));
+181:  return <main className="page-bg">
+182:    <div className="page-hero container"><span className="kicker">VILLA DIRECTORY</span><h1>ค้นหาวิลล่าที่ไว้ใจได้</h1><p>ตรวจสอบข้อมูลและสถานะของพูลวิลล่าทั่วไทย ก่อนตัดสินใจโอนเงิน</p></div>
+183:    <div className="container filter-panel">
+184:      <label className="wide"><span>ค้นหาชื่อวิลล่า</span><div><Icon name="search" /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="เช่น Sea Sky Pool Villa" /></div></label>
+185:      <label><span>จังหวัด</span><div><Icon name="pin" /><select><option>ทุกจังหวัด</option><option>ชลบุรี</option><option>ภูเก็ต</option></select></div></label>
+186:      <label><span>จำนวนผู้พัก</span><div><Icon name="users" /><select><option>ไม่จำกัด</option><option>1–8 คน</option><option>9–14 คน</option></select></div></label>
+187:      <label><span>สถานะ</span><div><Icon name="shield" /><select><option>ทุกสถานะ</option><option>ยืนยันแล้ว</option><option>รอตรวจสอบ</option></select></div></label>
+188:      <button className="primary-button"><Icon name="search" size={18} />ค้นหา</button>
+189:    </div>
+190:    <section className="container directory-results">
+191:      <div className="results-head"><div><h2>พูลวิลล่าทั้งหมด</h2><p>พบ {filtered.length} รายการที่ตรงกับการค้นหา</p></div><select aria-label="เรียงลำดับ"><option>อัปเดตล่าสุด</option><option>ชื่อ A–Z</option></select></div>
+192:      <div className="villa-grid directory-grid">{filtered.map(v => <VillaCard key={v.name} villa={v} onClick={() => go("detail")} />)}</div>
+193:    </section>
+194:  </main>;
+195:}
+196:
+197:function TrustRow({ label, children, icon }: { label: string; children: React.ReactNode; icon: IconName }) {
+198:  return <div className="trust-info-row"><span><Icon name={icon} /></span><div><small>{label}</small><strong>{children}</strong></div></div>;
+199:}
+200:
+201:function QrPattern() {
+202:  return <div className="qr-pattern" aria-label="ตัวอย่างคิวอาร์โค้ด">
+203:    {Array.from({ length: 81 }, (_, i) => <i key={i} className={([0,1,2,9,11,15,17,18,19,20,23,25,27,28,31,32,35,37,39,40,41,43,44,47,49,52,54,55,57,59,61,63,64,67,69,71,72,73,75,77,79,80].includes(i)) ? "on" : ""} />)}
+204:  </div>;
+205:}
+206:
+207:function Detail({ go }: { go: (p: Page) => void }) {
+208:  return <main className="detail-page">
+209:    <div className="container breadcrumbs"><button onClick={() => go("home")}>หน้าหลัก</button><span>/</span><button onClick={() => go("directory")}>ค้นหาวิลล่า</button><span>/</span><strong>Sea Sky Pool Villa</strong></div>
+210:    <div className="container gallery"><img className="gallery-main" src={photos[0]} alt="Sea Sky Pool Villa" /><img src={photos[1]} alt="พื้นที่ภายในวิลล่า" /><div className="gallery-more"><img src={photos[2]} alt="สระว่ายน้ำ" /><button>ดูรูปทั้งหมด 12 รูป</button></div></div>
+211:    <div className="container detail-grid">
+212:      <div className="detail-main">
+213:        <div className="title-block"><div><Badge>VERIFIED VILLA</Badge><h1>Sea Sky Pool Villa</h1><p><Icon name="pin" size={18} />บางแสน, ชลบุรี · รองรับสูงสุด 12 คน</p></div><span className="trust-score"><strong>98</strong><small>TRUST<br />SCORE</small></span></div>
+214:        <div className="notice"><Icon name="shield" /><div><strong>ข้อมูลที่พักนี้ผ่านการตรวจสอบแล้ว</strong><p>VillaCheck ยืนยันตัวตน ช่องทางติดต่อ และบัญชีรับเงินของเจ้าของที่พักเมื่อ 18 มิถุนายน 2568</p></div></div>
+215:        <section className="detail-section"><h2>เกี่ยวกับที่พัก</h2><p>พูลวิลล่าส่วนตัวบรรยากาศสงบ ใกล้หาดบางแสน เหมาะสำหรับครอบครัวและกลุ่มเพื่อน พร้อมสระว่ายน้ำระบบเกลือ พื้นที่ปิ้งย่าง และห้องนั่งเล่นกว้างขวาง</p></section>
+216:        <section className="detail-section"><h2>สิ่งอำนวยความสะดวก</h2><div className="amenities">{[["pool","สระว่ายน้ำส่วนตัว"],["bed","4 ห้องนอน"],["wifi","Wi-Fi ฟรี"],["kitchen","ห้องครัว"],["car","ที่จอดรถ 4 คัน"],["home","พื้นที่ปิ้งย่าง"]].map(a => <span key={a[1]}><Icon name={a[0] as IconName} />{a[1]}</span>)}</div></section>
+217:        <section className="detail-section location-section"><h2>ตำแหน่งที่ตั้ง</h2><div className="map-placeholder"><div className="map-lines" /><span><Icon name="pin" /></span><small>บางแสน, ชลบุรี</small></div><p><Icon name="pin" />ตำบลแสนสุข อำเภอเมืองชลบุรี จังหวัดชลบุรี 20130</p></section>
+218:      </div>
+219:      <aside className="trust-card">
+220:        <div className="trust-card-head"><span><Icon name="shield" size={26} /></span><div><small>VILLACHECK STATUS</small><h3>ยืนยันข้อมูลแล้ว</h3></div></div>
+221:        <div className="status-line"><span /><div><small>ตรวจสอบล่าสุด</small><strong>18 มิถุนายน 2568</strong></div></div>
+222:        <div className="status-line future"><span /><div><small>ตรวจสอบครั้งถัดไป</small><strong>18 กันยายน 2568</strong></div></div>
+223:        <hr />
+224:        <h4>ช่องทางติดต่อทางการ</h4>
+225:        <TrustRow label="โทรศัพท์" icon="phone">08X-XXX-4289</TrustRow>
+226:        <TrustRow label="LINE Official" icon="mail">@seaskypoolvilla</TrustRow>
+227:        <hr />
+228:        <h4>บัญชีรับเงินที่ยืนยันแล้ว</h4>
+229:        <div className="bank-box"><span className="bank-mark">K</span><div><small>ธนาคารกสิกรไทย</small><strong>XXX-X-X4289-X</strong><p>ชื่อบัญชี บจก. ซีสกาย วิลล่า</p></div><Icon name="check" /></div>
+230:        <div className="secure-note"><Icon name="info" size={17} />ตรวจสอบชื่อบัญชีให้ตรงกันทุกครั้งก่อนโอน</div>
+231:        <div className="qr-side"><QrPattern /><div><strong>สแกนเพื่อยืนยัน</strong><span>VC-TH-2025-01842</span></div></div>
+232:        <button className="primary-button full" onClick={() => go("verify")}><Icon name="qr" size={18} />เปิดหน้าตรวจสอบ QR</button>
+233:      </aside>
+234:    </div>
+235:  </main>;
+236:}
+237:
+238:function Verify({ go }: { go: (p: Page) => void }) {
+239:  const [status, setStatus] = useState<"verified" | "pending" | "expired">("verified");
+240:  const meta = status === "verified"
+241:    ? { label: "VERIFIED", title: "ยืนยันข้อมูลแล้ว", date: "18 กันยายน 2568" }
+242:    : status === "pending"
+243:      ? { label: "PENDING", title: "อยู่ระหว่างการตรวจสอบ", date: "—" }
+244:      : { label: "EXPIRED", title: "สถานะหมดอายุ", date: "18 มิถุนายน 2568" };
+245:  return <main className="verify-page">
+246:    <div className="verify-top"><div className="container"><Logo light /><button onClick={() => go("home")}><Icon name="close" />ปิดหน้าตรวจสอบ</button></div></div>
+247:    <div className="verify-bg">
+248:      <div className="verify-intro"><span className="kicker light-kicker">QR VERIFICATION</span><h1>ผลการตรวจสอบที่พัก</h1><p>ข้อมูลจากระบบ VillaCheck ณ วันที่ 20 มิถุนายน 2568 เวลา 14:42 น.</p></div>
+249:      <div className={`verification-card ${status}`}>
+250:        <div className="verify-status">
+251:          <span className="status-shield"><Icon name={status === "verified" ? "shield" : "clock"} size={40} /></span>
+252:          <div className="verify-label">{meta.label}</div><h2>{meta.title}</h2>
+253:          <p>{status === "verified" ? "ข้อมูลที่พักและเจ้าของผ่านการตรวจสอบโดย VillaCheck" : "โปรดติดต่อที่พักและตรวจสอบข้อมูลเพิ่มเติมก่อนโอน"}</p>
+254:        </div>
+255:        <div className="verify-body">
+256:          <div className="verified-villa"><img src={photos[0]} alt="Sea Sky Pool Villa" /><div><small>ชื่อที่พัก</small><h3>Sea Sky Pool Villa</h3><p><Icon name="pin" size={16} />บางแสน, ชลบุรี</p></div></div>
+257:          <div className="verify-details">
+258:            <TrustRow label="โทรศัพท์ทางการ" icon="phone">08X-XXX-4289</TrustRow>
+259:            <TrustRow label="LINE Official" icon="mail">@seaskypoolvilla</TrustRow>
+260:            <TrustRow label="บัญชีรับเงิน" icon="shield">กสิกรไทย · XXX-X-X4289-X</TrustRow>
+261:            <TrustRow label="ชื่อบัญชี" icon="users">บจก. ซีสกาย วิลล่า</TrustRow>
+262:          </div>
+263:          <div className="date-grid"><div><span>ตรวจสอบล่าสุด</span><strong>18 มิถุนายน 2568</strong></div><div><span>ใช้ได้ถึง</span><strong>{meta.date}</strong></div></div>
+264:          <div className="warning-note"><Icon name="info" /><p><strong>ก่อนโอนเงินทุกครั้ง</strong> ตรวจสอบชื่อบัญชีให้ตรงกับข้อมูลด้านบน VillaCheck ไม่มีบริการรับจองหรือรับชำระเงิน</p></div>
+265:          <button className="outline-button full" onClick={() => go("detail")}>ดู Trust Profile ฉบับเต็ม <Icon name="arrow" size={18} /></button>
+266:        </div>
+267:      </div>
+268:      <div className="prototype-switch"><span>Prototype:</span>{(["verified","pending","expired"] as const).map(s => <button key={s} onClick={() => setStatus(s)} className={status === s ? "active" : ""}>{s}</button>)}</div>
+269:    </div>
+270:  </main>;
+271:}
+272:
+273:const plans = [
+274:  { name: "Basic Trust QR", price: "ฟรี", unit: "90 วัน", desc: "เริ่มต้นสร้างความน่าเชื่อถือ", features: ["Trust Profile พื้นฐาน", "QR Verification", "Verified Badge", "อัปเดตข้อมูล 1 ครั้ง"], cta: "เริ่มต้นใช้งานฟรี" },
+275:  { name: "Starter", price: "฿990", unit: "/ 3 เดือน", desc: "เหมาะสำหรับที่พักเริ่มต้น", features: ["ทุกอย่างใน Basic", "อัปเดตข้อมูลรายเดือน", "สถิติการเข้าชมพื้นฐาน", "QR ดาวน์โหลดคุณภาพสูง"], cta: "เลือก Starter" },
+276:  { name: "Pro", price: "฿2,900", unit: "/ 6 เดือน", desc: "เพิ่มความมั่นใจให้ลูกค้า", features: ["ทุกอย่างใน Starter", "ระดับ Pro Verification", "Analytics แบบละเอียด", "แสดงผลเด่นใน Directory", "ตรวจสอบทุก 90 วัน"], cta: "เลือก Pro", recommended: true },
+277:  { name: "Plus", price: "฿4,900", unit: "/ 12 เดือน", desc: "สำหรับธุรกิจที่กำลังเติบโต", features: ["ทุกอย่างใน Pro", "รองรับที่พัก 2 แห่ง", "รายงานประจำเดือน", "Priority Support", "Trust Score Insights"], cta: "เลือก Plus" },
+278:  { name: "Premium", price: "฿9,900", unit: "/ เดือน", desc: "สำหรับเครือที่พักมืออาชีพ", features: ["รองรับสูงสุด 10 แห่ง", "Premium Verification", "Portfolio Dashboard", "Dedicated Account Manager", "Custom Trust Report"], cta: "ติดต่อทีมงาน" },
+279:];
+280:
+281:function Pricing() {
+282:  return <main className="page-bg pricing-page">
+283:    <div className="page-hero container"><span className="kicker">PRICING FOR OWNERS</span><h1>แพ็กเกจที่เติบโตไปพร้อมธุรกิจคุณ</h1><p>สร้างความน่าเชื่อถือให้ที่พักด้วยเครื่องมือที่ลูกค้าตรวจสอบได้<br />เริ่มใช้ฟรี 90 วัน ยังไม่ต้องผูกบัตร</p><div className="billing"><button className="active">แพ็กเกจระยะยาว</button><button>รายเดือน</button><span>ประหยัดสูงสุด 20%</span></div></div>
+284:    <div className="container plan-grid">
+285:      {plans.map(plan => <article className={`plan-card ${plan.recommended ? "recommended" : ""}`} key={plan.name}>
+286:        {plan.recommended && <div className="recommended-label">แนะนำสำหรับคุณ</div>}
+287:        <div className="plan-head"><h2>{plan.name}</h2><p>{plan.desc}</p><div><strong>{plan.price}</strong><span>{plan.unit}</span></div></div>
+288:        <hr /><ul>{plan.features.map(f => <li key={f}><span><Icon name="check" size={14} /></span>{f}</li>)}</ul>
+289:        <button className={plan.recommended ? "primary-button full" : "outline-button full"}>{plan.cta}</button>
+290:      </article>)}
+291:    </div>
+292:    <div className="container no-payment"><Icon name="info" /><p><strong>VillaCheck ยังไม่มีระบบชำระเงินออนไลน์</strong><br />หลังเลือกแพ็กเกจ ทีมงานจะติดต่อกลับเพื่อยืนยันข้อมูลและแนะนำขั้นตอนการสมัคร</p></div>
+293:    <section className="container compare-strip"><div><span className="kicker light-kicker">TRUST FIRST</span><h2>ไม่แน่ใจว่าแพ็กเกจไหนเหมาะกับคุณ?</h2><p>ทีมงานของเราพร้อมช่วยประเมินและแนะนำแพ็กเกจที่เหมาะกับธุรกิจ</p></div><button className="white-button"><Icon name="phone" size={18} />นัดคุยกับทีมงาน</button></section>
+294:  </main>;
+295:}
+296:
+297:function Footer({ go }: { go: (p: Page) => void }) {
+298:  return <footer><div className="container footer-grid"><div><Logo light /><p>แพลตฟอร์มตรวจสอบพูลวิลล่า<br />เพื่อการตัดสินใจที่มั่นใจก่อนโอน</p></div><div><strong>สำหรับผู้ใช้งาน</strong><button onClick={() => go("directory")}>ค้นหาวิลล่า</button><button onClick={() => go("verify")}>ตรวจสอบ QR</button><button>วิธีการทำงาน</button></div><div><strong>สำหรับเจ้าของที่พัก</strong><button onClick={() => go("pricing")}>แพ็กเกจและราคา</button><button>ลงทะเบียนที่พัก</button><button>ศูนย์ช่วยเหลือ</button></div><div><strong>VillaCheck</strong><button>เกี่ยวกับเรา</button><button>ติดต่อเรา</button><button>นโยบายความเป็นส่วนตัว</button></div></div><div className="container footer-bottom"><span>© 2025 VillaCheck. All rights reserved.</span><span>Trust before transfer.</span></div></footer>;
+299:}
+300:
+301:export default function App() {
+302:  const [page, setPage] = useState<Page>("home");
+303:  const go = (next: Page) => { setPage(next); window.scrollTo({ top: 0, behavior: "smooth" }); };
+304:  const content = page === "home" ? <Home go={go} /> : page === "directory" ? <Directory go={go} /> : page === "detail" ? <Detail go={go} /> : page === "verify" ? <Verify go={go} /> : <Pricing />;
+305:  return <div className="app">{page !== "verify" && <Header page={page} go={go} />}{content}{page !== "verify" && <Footer go={go} />}</div>;
+306:}
+
+(End of file — 306 lines.)

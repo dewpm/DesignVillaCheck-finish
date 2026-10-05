@@ -1,0 +1,69 @@
+/* Design 1 remains the visual foundation; restrained Design 3 evidence details. */
+.verification-ledger { margin: 24px 0; border: 1px solid var(--line); border-radius: 14px; padding: 22px; background: white; }
+.ledger-heading h2 { margin: 5px 0; font-size: 20px; color: var(--ocean); }
+.ledger-heading p { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
+.ledger-items > div { display: flex; align-items: center; gap: 14px; padding: 15px 0; border-top: 1px solid var(--line); }
+.ledger-number { font: 600 12px "Noto Sans Display"; color: var(--teal); letter-spacing: 1px; }
+.ledger-items strong { display: block; font-size: 14px; color: var(--ocean); }
+.ledger-items small { display: block; color: var(--muted); font-size: 12px; }
+.ledger-check { margin-left: auto; display: inline-flex; gap: 5px; align-items: center; color: var(--teal); font-size: 11px; white-space: nowrap; }
+.status-badge { border: 1px solid currentColor; }
+.portal-menu-toggle { display: none; }
+.portal-mobile-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+button:focus-visible, a:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+@media (max-width: 900px) {
+ .app, .container, .portal-content, .detail-main, .auth-card, .flow-card { min-width: 0; }
+ .portal-head h1, .data-row strong, .confirmation-box strong { overflow-wrap: anywhere; }
+ input, select, textarea { font-size: 16px !important; min-width: 0; max-width: 100%; }
+ .header nav { max-height: calc(100dvh - 90px); overflow-y: auto; }
+ .header nav button { min-height: 44px; }
+  .portal-side { display: block; padding: 12px 16px; min-height: 0; align-self: start; }
+  .portal-menu-toggle { display: block; color: white; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); border-radius: 8px; min-height: 44px; padding: 0 14px; font: inherit; }
+  .portal-side nav, .portal-side .portal-logout { display: none; }
+  .portal-side.portal-menu-open nav { display: grid; grid-template-columns: 1fr 1fr; max-height: calc(100dvh - 160px); overflow-y: auto; padding-top: 16px; gap: 6px; }
+  .portal-side.portal-menu-open nav button { min-height: 48px; font-size: 14px; white-space: normal; }
+  .portal-side.portal-menu-open .portal-logout { display: block; width: 100%; margin-top: 12px; min-height: 44px; }
+  .portal-content { padding: 28px 16px 48px; }
+  .portal-head { align-items: stretch; flex-direction: column; gap: 14px; }
+  .portal-head h1 { font-size: 30px; line-height: 1.25; }
+  .portal-head > button { align-self: flex-start; }
+  .metric-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .metric-card { padding: 20px 16px; }
+  .package-strip, .review-actions, .button-row { flex-wrap: wrap; gap: 12px; }
+  .data-row { display: flex; flex-wrap: wrap; gap: 12px; }
+  .data-row > div { flex: 1 1 170px; min-width: 0; }
+  .data-row > button { min-height: 44px; }
+  .portal-form, .flow-card, .auth-card, .report-success-card { max-width: 100%; padding: 24px 18px; }
+  .auth-page, .flow-page { padding: 28px 16px; }
+  .report-form-card { grid-template-columns: 1fr; }
+  .report-guest-note { position: static; }
+  .package-picker { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .primary-button, .outline-button, .text-button { min-height: 44px; }
+  .gallery-nav, .lightbox-nav { width: 44px; height: 44px; }
+  .gallery-dots { gap: 0; bottom: 8px; }
+  .gallery-dots button, .lightbox-footer button { width: 32px; height: 32px; background: transparent; position: relative; }
+  .gallery-dots button::after, .lightbox-footer button::after { content: ''; position: absolute; width: 7px; height: 7px; top: 12px; left: 12px; border-radius: 999px; background: rgba(255,255,255,.55); }
+  .gallery-dots button.active, .lightbox-footer button.active { width: 32px; background: transparent; }
+  .gallery-dots button.active::after, .lightbox-footer button.active::after { background: var(--sun); }
+  .gallery-lightbox { padding: max(70px, env(safe-area-inset-top)) 12px max(90px, env(safe-area-inset-bottom)); }
+  .gallery-lightbox > img { max-height: 70dvh; width: 100%; height: auto; }
+  .lightbox-close { min-width: 44px; min-height: 44px; top: max(16px, env(safe-area-inset-top)); }
+  .lightbox-footer { bottom: max(20px, env(safe-area-inset-bottom)); }
+  .scan-frame, .scanner-video { max-width: 100%; }
+ .portal-side { height: auto; }
+ .portal-side nav { position: static; inset: auto; height: auto; margin: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
+ .portal-side nav button { min-width: 0; text-align: left; justify-content: start; }
+ .portal-side .portal-logout { position: static; }
+}
+@media (max-width: 520px) {
+ .verification-ledger { padding: 18px; }
+ .ledger-items > div { gap: 10px; flex-wrap: wrap; }
+ .ledger-items > div > div { flex: 1; min-width: 0; }
+ .portal-side.portal-menu-open nav, .package-picker, .villa-choice, .info-article-list { grid-template-columns: 1fr; }
+ .info-article-list article:first-child { grid-column: auto; }
+ .confirmation-box > div { flex-wrap: wrap; }
+ .button-row > button, .review-actions > button { flex: 1 1 100%; }
+ .title-block h1 { overflow-wrap: anywhere; font-size: 26px; }
+ .metric-card strong { font-size: 30px; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }

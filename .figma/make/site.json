@@ -1,0 +1,10 @@
+{
+  "description": "ค้นหาและตรวจสอบพูลวิลล่าก่อนโอนเงินด้วยข้อมูลเชื่อถือได้ พร้อมโปรไฟล์ตรวจสอบและ QR Verification เพื่อความมั่นใจสูงสุด",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
