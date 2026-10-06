@@ -1,7 +1,11 @@
+import { packageIntentKey } from "./packagePlans";
+import { SocialLogin } from "./UserAccounts";
+import { api, authenticate, logout, ApiError } from "./api";
 import { openSupport } from "./support";
 import { useEffect, useState } from "react";
 
 export type Page =
+  | "user-registration" | "admin-users"
   | "home" | "directory" | "detail" | "scan" | "verify" | "pricing" | "login"
   | "about" | "verification-standard" | "articles" | "article-detail" | "owner-guide"
   | "help" | "contact" | "privacy" | "terms" | "social-facebook" | "social-instagram"
@@ -23,7 +27,7 @@ export type UserReport = { reference: string; villa: string; type: string; guest
 const publicInfo: Partial<Record<Page, { kicker: string; title: string; description: string; body: string }>> = {
   about: { kicker: "ABOUT VILLACHECK", title: "เกี่ยวกับ VillaCheck", description: "Trust before transfer.", body: "VillaCheck เป็น Prototype แพลตฟอร์มตรวจสอบข้อมูลที่พัก ช่องทางติดต่อ และบัญชีรับเงิน เพื่อช่วยให้ผู้ใช้งานมีข้อมูลประกอบการตัดสินใจก่อนโอน" },
   "verification-standard": { kicker: "VERIFICATION STANDARD", title: "มาตรฐานการตรวจสอบ", description: "หลักการตรวจสอบข้อมูลของ VillaCheck", body: "กระบวนการตัวอย่างครอบคลุมข้อมูลตัวตน ช่องทางติดต่อ บัญชีรับเงิน QR Reference วันตรวจสอบล่าสุด และวันหมดอายุของสถานะ" },
-  "owner-guide": { kicker: "OWNER GUIDE", title: "คู่มือสำหรับเจ้าของที่พัก", description: "เริ่มต้นสร้าง Trust Profile ให้ Villa ของคุณ", body: "ศึกษาขั้นตอนลงทะเบียน เพิ่มข้อมูล Villa ส่งข้อมูลตรวจสอบ จัดการ QR และติดตามสถานะผ่าน Owner Dashboard" },
+  "owner-guide": { kicker: "MERCHANT GUIDE", title: "คู่มือสำหรับเจ้าของที่พัก", description: "เริ่มต้นสร้าง Trust Profile ให้ Villa ของคุณ", body: "ศึกษาขั้นตอนลงทะเบียน เพิ่มข้อมูล Villa ส่งข้อมูลตรวจสอบ จัดการ QR และติดตามสถานะผ่าน Merchant Dashboard" },
   help: { kicker: "HELP / SUPPORT", title: "ศูนย์ช่วยเหลือ", description: "ค้นหาคำตอบและช่องทางรับความช่วยเหลือ", body: "ดูคำแนะนำเกี่ยวกับการค้นหาที่พัก การตรวจสอบก่อนโอน การสแกน QR การแจ้งปัญหา และการจัดการข้อมูลสำหรับเจ้าของที่พัก" },
   contact: { kicker: "CONTACT VILLACHECK", title: "ติดต่อเรา", description: "ทีมงานพร้อมช่วยเหลือในวันจันทร์–ศุกร์ เวลา 09:00–18:00 น.", body: "ข้อมูลติดต่อใน Prototype เป็นข้อมูลสาธิต ใช้ปุ่มติดต่อเมื่อเปิดใช้งานช่องทางจริงแล้ว" },
   privacy: { kicker: "LEGAL", title: "นโยบายความเป็นส่วนตัว", description: "แนวทางการดูแลข้อมูลสำหรับ VillaCheck Prototype", body: "VillaCheck ใช้ข้อมูลที่จำเป็นต่อการสาธิตระบบเท่านั้น ข้อมูลทั้งหมดใน Prototype เป็นข้อมูลตัวอย่างและไม่มีการรับชำระเงินจริง" },
@@ -83,24 +87,26 @@ const testAccounts = [
   { role: "Admin", email: "admin@villacheck.test", password: "Admin1234" },
 ];
 
-export function LoginPage({ go, onAuthenticated }: { go: Go; onAuthenticated?: (role: "User" | "Owner" | "Admin") => void }) {
+export function LoginPage({ go, onAuthenticated, reference = "" }: { go: Go; reference?: string; onAuthenticated?: (role: "User" | "Owner" | "Admin") => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const oauthError = new URLSearchParams(window.location.hash.slice(1)).get("oauth_error");
+  const oauthErrors: Record<string, string> = { not_configured: "ยังไม่ได้ตั้งค่า OAuth", cancelled: "คุณยกเลิกการเข้าสู่ระบบ", invalid_state: "คำขอเข้าสู่ระบบหมดอายุ กรุณาลองใหม่", email_required: "ผู้ให้บริการไม่ได้ส่งอีเมลที่ยืนยันแล้ว กรุณาสมัครด้วยอีเมล", email_exists: "อีเมลนี้มีบัญชีอยู่แล้ว กรุณาใช้ช่องทางเดิมเข้าสู่ระบบ", provider_failed: "เชื่อมต่อผู้ให้บริการไม่สำเร็จ กรุณาลองใหม่" };
+  const [error, setError] = useState(oauthError ? oauthErrors[oauthError] || "OAuth ไม่สำเร็จ" : "");
 
-  const login = () => {
-    const account = testAccounts.find(item => item.email === email && item.password === password);
-    if (!account) {
-      setError("อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาใช้บัญชีทดสอบด้านล่าง");
-      return;
-    }
-    setError("");
-    setLoading(true);
-    window.setTimeout(() => {
-      onAuthenticated?.(account.role as "User" | "Owner" | "Admin");
-      go(account.role === "User" ? "user-dashboard" : account.role === "Owner" ? "owner-dashboard" : "admin-dashboard");
-    }, 650);
+  const [localAccounts, setLocalAccounts] = useState(false);
+  useEffect(() => { void api<{ localAccounts: boolean }>("/config").then(v => setLocalAccounts(v.localAccounts)).catch(() => {}); }, []);
+  const login = async () => {
+    if (loading) return;
+    setError(""); setLoading(true);
+    try {
+      const account = await authenticate(email, password);
+      const role = account.role === "merchant" ? "Owner" : account.role === "admin" ? "Admin" : "User";
+      onAuthenticated?.(role);
+      go(role === "Owner" ? sessionStorage.getItem(packageIntentKey) ? "owner-add-villa" : "owner-dashboard" : role === "Admin" ? "admin-dashboard" : reference ? "verify" : "user-dashboard", role === "User" ? reference : undefined);
+    } catch (error) { setError(error instanceof Error ? error.message : "เข้าสู่ระบบไม่สำเร็จ"); }
+    finally { setLoading(false); }
   };
 
   return <main className="auth-page">
@@ -109,18 +115,21 @@ export function LoginPage({ go, onAuthenticated }: { go: Go; onAuthenticated?: (
       <span className="kicker">VILLACHECK ACCOUNT</span>
       <h1>เข้าสู่ระบบ</h1>
       <p>เข้าสู่พื้นที่ใช้งานตามบทบาทของคุณ</p>
+      <SocialLogin reference={reference} />
       <div className="form-stack">
         <label><span>อีเมล</span><input value={email} onChange={event => setEmail(event.target.value)} placeholder="name@example.com" /></label>
         <label><span>รหัสผ่าน</span><input value={password} onChange={event => setPassword(event.target.value)} type="password" placeholder="รหัสผ่าน" /></label>
         {error && <div className="form-message error-state">{error}</div>}
         <button className="primary-button full" onClick={login} disabled={loading}>{loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}</button>
       </div>
-      <div className="test-accounts">
-        <strong>บัญชีทดสอบสำหรับ Stakeholder</strong>
-        {testAccounts.map(account => <button key={account.role} onClick={() => { setEmail(account.email); setPassword(account.password); setError(""); }}>
-          <span>{account.role}</span><small>{account.email}<br />{account.password}</small>
+      <button className="text-button" onClick={() => go("user-registration", reference)}>สมัครสมาชิก User ด้วยอีเมล</button>
+      <button className="text-button" onClick={() => go("owner-registration")}>สมัครบัญชี Merchant</button>
+      {localAccounts && <div className="test-accounts">
+        <strong>บัญชีทดสอบบนเซิร์ฟเวอร์ Local</strong>
+        {testAccounts.map(account => <button key={account.role === "Owner" ? "Merchant" : account.role} onClick={() => { setEmail(account.email); setPassword(account.password); setError(""); }}>
+          <span>{account.role === "Owner" ? "Merchant" : account.role}</span><small>{account.email}<br />{account.password}</small>
         </button>)}
-      </div>
+      </div>}
     </div>
   </main>;
 }
@@ -133,41 +142,24 @@ export const packageCatalog: Record<string, { price: string; features: string[] 
   "Trust Premium": { price: "฿9,900 / เดือน", features: ["รองรับสูงสุด 10 แห่ง", "Premium Verification", "Portfolio Dashboard", "Dedicated Account Manager"] },
 };
 
-export function OwnerPackageAuth({ go, packageName, onOwnerLogin }: { go: Go; packageName: string; onOwnerLogin: () => void }) {
-  const [showLogin, setShowLogin] = useState(false);
-  const [email, setEmail] = useState("owner@villacheck.test");
-  const [password, setPassword] = useState("Owner1234");
-  const [error, setError] = useState("");
-  const login = () => {
-    if (email !== "owner@villacheck.test" || password !== "Owner1234") return setError("กรุณาใช้บัญชี Owner สำหรับทดสอบ");
-    onOwnerLogin();
-    go("owner-select-villa");
-  };
-  return <FlowPage kicker="OWNER REGISTER / LOGIN" title="เริ่มต้นใช้งานแพ็กเกจ" subtitle={`${packageName} · ${packageCatalog[packageName].price}`} onBack={() => go("pricing")}>
-    {!showLogin ? <div className="auth-choice"><button className="primary-button" onClick={() => go("owner-information")}>ลงทะเบียน Owner ใหม่</button><button className="outline-button" onClick={() => setShowLogin(true)}>Login สำหรับ Owner</button></div> :
-      <div className="form-stack"><label><span>Owner email</span><input value={email} onChange={event => setEmail(event.target.value)} /></label><label><span>รหัสผ่าน</span><input type="password" value={password} onChange={event => setPassword(event.target.value)} /></label>{error && <div className="form-message error-state">{error}</div>}<button className="primary-button full" onClick={login}>Login และดำเนินการต่อ</button><button className="text-button" onClick={() => setShowLogin(false)}>กลับไปเลือกการลงทะเบียน</button></div>}
-  </FlowPage>;
+export function OwnerPackageAuth({ go, packageName }: { go: Go; packageName: string; onOwnerLogin: () => void }) {
+  return <FlowPage kicker="MERCHANT REGISTER / LOGIN" title="เริ่มต้นใช้งานแพ็กเกจ" subtitle={`แพ็กเกจที่เลือก: ${packageName}`} onBack={() => go("pricing")}><div className="auth-choice"><button className="primary-button" onClick={() => go("owner-registration")}>สมัคร Merchant ใหม่</button><button className="outline-button" onClick={() => go("login")}>เข้าสู่ระบบ Merchant</button></div></FlowPage>;
 }
 
 export function OwnerRegistration({ go, packageName }: { go: Go; packageName: string }) {
   const [name, setName] = useState("");
-  const [villa, setVilla] = useState("");
-  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const submit = () => {
-    if (!name || !villa || !phone) return setError("กรุณากรอกข้อมูลให้ครบทุกช่อง");
-    setError("");
-    go("owner-onboarding-villa");
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); if (busy) return;
+    setBusy(true); setError("");
+    try { await authenticate(email, password, name); go("owner-add-villa"); }
+    catch (error) { setError(error instanceof Error ? error.message : "สมัครไม่สำเร็จ"); }
+    finally { setBusy(false); }
   };
-  return <FlowPage kicker="OWNER INFORMATION" title="ข้อมูลเจ้าของที่พัก" subtitle={`แพ็กเกจที่เลือก: ${packageName}`} onBack={() => go("owner-auth")}>
-    <div className="form-stack">
-      <label><span>ชื่อ–นามสกุล</span><input value={name} onChange={event => setName(event.target.value)} placeholder="ชื่อผู้ดูแลที่พัก" /></label>
-      <label><span>ชื่อธุรกิจหรือแบรนด์</span><input value={villa} onChange={event => setVilla(event.target.value)} placeholder="ชื่อธุรกิจ" /></label>
-      <label><span>เบอร์โทรศัพท์</span><input value={phone} onChange={event => setPhone(event.target.value)} placeholder="08X-XXX-XXXX" /></label>
-      {error && <div className="form-message error-state">{error}</div>}
-      <button className="primary-button full" onClick={submit}>บันทึกและเพิ่ม Villa</button>
-    </div>
-  </FlowPage>;
+  return <FlowPage kicker="MERCHANT REGISTRATION" title="สมัครบัญชี Merchant" subtitle={`แพ็กเกจที่สนใจ: ${packageName}`} onBack={() => go("login")}><form className="form-stack" onSubmit={submit}><label><span>ชื่อ Merchant / บริษัท</span><input required value={name} onChange={e => setName(e.target.value)} /></label><label><span>อีเมล</span><input required type="email" value={email} onChange={e => setEmail(e.target.value)} /></label><label><span>รหัสผ่าน (อย่างน้อย 10 ตัวอักษร)</span><input required type="password" minLength={10} value={password} onChange={e => setPassword(e.target.value)} /></label>{error && <div className="form-message error-state">{error}</div>}<button className="primary-button" disabled={busy} type="submit">{busy ? "กำลังสมัคร…" : "สร้างบัญชีและเพิ่ม Villa"}</button></form></FlowPage>;
 }
 
 export function OwnerOnboardingVilla({ go, onVillaAdded }: { go: Go; onVillaAdded: (name: string) => void }) {
@@ -200,7 +192,7 @@ export function OwnerSelectVilla({ go, onSelect }: { go: Go; onSelect: (villa: s
 export function PackageRequestPending({ go, packageName }: { go: Go; packageName: string }) {
   return <FlowPage kicker="REQUEST SUBMITTED" title="ส่งคำขอแพ็กเกจเรียบร้อยแล้ว" subtitle="ทีมงาน VillaCheck จะตรวจสอบข้อมูลก่อนเปิดใช้งาน" onBack={() => go("package-confirmation")}>
     <div className="state-panel"><StatusBadge status="Pending" /><h2>รอดำเนินการ / Pending</h2><p>{packageName} · ไม่มีการชำระเงินในขั้นตอนนี้</p></div>
-    <button className="primary-button full" onClick={() => go("owner-dashboard")}>ไป Owner Dashboard</button>
+    <button className="primary-button full" onClick={() => go("owner-dashboard")}>ไป Merchant Dashboard</button>
   </FlowPage>;
 }
 
@@ -213,10 +205,10 @@ function FlowPage({ kicker, title, subtitle, onBack, children }: { kicker: strin
 
 const ownerNav: [string, Page][] = [
   ["Dashboard", "owner-dashboard"], ["Villas", "owner-villas"], ["Add Villa", "owner-add-villa"],
-  ["QR", "scan"], ["Analytics", "owner-analytics"], ["Reports", "owner-reports"], ["Package", "owner-package"],
+  ["QR และการต่ออายุ", "owner-villa-detail"], ["Analytics", "owner-analytics"], ["Reports", "owner-reports"], ["Package", "owner-package"],
 ];
 const adminNav: [string, Page][] = [
-  ["Dashboard", "admin-dashboard"], ["Owners", "admin-owners"], ["Villas", "admin-villas"],
+  ["Dashboard", "admin-dashboard"], ["Users", "admin-users"], ["Merchants", "admin-owners"], ["Villas", "admin-villas"],
   ["Checks", "admin-checks"], ["Reports", "admin-reports"], ["QR", "admin-qr"], ["Packages", "admin-packages"],
 ];
 const userNav: [string, Page][] = [
@@ -224,9 +216,14 @@ const userNav: [string, Page][] = [
   ["Directory", "directory"], ["Check Before Transfer", "user-precheck"],
 ];
 
-function PortalShell({ role, page, go, children }: { role: "Owner" | "Admin" | "User"; page: Page; go: Go; children: React.ReactNode }) {
+export function PortalShell({ role, page, go, children }: { role: "Owner" | "Admin" | "User"; page: Page; go: Go; children: React.ReactNode }) {
   const nav = role === "Owner" ? ownerNav : role === "Admin" ? adminNav : userNav;
   const [menuOpen, setMenuOpen] = useState(false);
+  const [logoutError, setLogoutError] = useState("");
+  const signOut = async () => {
+    try { await logout(); navigate("login"); }
+    catch (error) { if (error instanceof ApiError && error.status === 401) navigate("login"); else setLogoutError(error instanceof Error ? error.message : "ออกจากระบบไม่สำเร็จ"); }
+  };
   const navigate = (target: Page) => { setMenuOpen(false); go(target); };
   useEffect(() => { setMenuOpen(false); }, [page]);
   useEffect(() => {
@@ -240,9 +237,9 @@ function PortalShell({ role, page, go, children }: { role: "Owner" | "Admin" | "
         <button className="portal-brand" onClick={() => navigate("home")}>Villa<span>Check</span></button>
         <button className="portal-menu-toggle" aria-expanded={menuOpen} aria-controls="portal-menu" onClick={() => setMenuOpen(value => !value)}>{menuOpen ? "ปิดเมนู ✕" : "เมนู ☰"}</button>
       </div>
-      <small>{role.toUpperCase()} PORTAL</small>
-      <nav id="portal-menu" aria-label={`เมนู ${role}`}>{nav.map(([label, target]) => <button key={target} aria-current={page === target ? "page" : undefined} className={page === target ? "active" : ""} onClick={() => navigate(target)}>{label}</button>)}</nav>
-      <button className="portal-logout" onClick={() => navigate("login")}>ออกจากระบบ</button>
+      <small>{role === "Owner" ? "MERCHANT" : role.toUpperCase()} PORTAL</small>
+      <nav id="portal-menu" aria-label={`เมนู ${role === "Owner" ? "Merchant" : role}`}>{nav.map(([label, target]) => <button key={target} aria-current={page === target ? "page" : undefined} className={page === target ? "active" : ""} onClick={() => navigate(target)}>{label}</button>)}</nav>
+      <button className="portal-logout" onClick={() => void signOut()}>ออกจากระบบ</button>{logoutError && <p role="alert">{logoutError}</p>}
     </aside>
     <section className="portal-content">{children}</section>
   </main>;
@@ -262,7 +259,7 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 
 export function OwnerPages({ page, go, packageName, packageStatus, setPackageName, onPackageChange }: { page: Page; go: Go; packageName: string; packageStatus: string; setPackageName: (name: string) => void; onPackageChange: () => void }) {
   if (page === "owner-dashboard") return <PortalShell role="Owner" page={page} go={go}>
-    <PortalHead title="Owner Dashboard" subtitle="ภาพรวม Sea Sky Pool Villa" action={<button className="primary-button" onClick={() => go("owner-add-villa")}>+ Add Villa</button>} />
+    <PortalHead title="Merchant Dashboard" subtitle="ภาพรวม Sea Sky Pool Villa" action={<button className="primary-button" onClick={() => go("owner-add-villa")}>+ Add Villa</button>} />
     <div className="package-strip"><span>แพ็กเกจปัจจุบัน</span><strong>{packageName}</strong><StatusBadge status={packageStatus.includes("Pending") ? "Pending" : "Verified"} /><small>{packageStatus}</small><button onClick={() => go("owner-package")}>เปลี่ยน Package</button></div>
     <div className="metric-grid"><Metric label="Villas" value="1" note="1 Verified" /><Metric label="QR Scans" value="248" note="+18% เดือนนี้" /><Metric label="Checks" value="91" note="Success 88" /><Metric label="Reports" value="2" note="Pending 1" /></div>
     <div className="portal-grid"><ActionCard title="จัดการ Villa" text="ดูรายละเอียด แก้ไข และสถานะ" action="เปิด Villas" onClick={() => go("owner-villas")} /><ActionCard title="Verification QR" text="เปิดหน้าสแกนและผลตรวจสอบ" action="เปิด QR" onClick={() => go("scan")} /><ActionCard title="Analytics" text="ดูสถิติการเข้าชม" action="ดู Analytics" onClick={() => go("owner-analytics")} /></div>
@@ -302,18 +299,18 @@ function PackagePicker({ selected, onSelect }: { selected: string; onSelect: (na
 
 export function AdminPages({ page, go, villaStatus, setVillaStatus }: { page: Page; go: Go; villaStatus: Status; setVillaStatus: (status: Status) => void }) {
   if (page === "admin-dashboard") return <PortalShell role="Admin" page={page} go={go}><PortalHead title="Admin Dashboard" subtitle="ภาพรวมระบบ VillaCheck" /><div className="metric-grid"><Metric label="Pending Villas" value="4" note="รอตรวจสอบ" /><Metric label="Owners" value="128" note="Active 123" /><Metric label="Checks" value="2,481" note="เดือนนี้" /><Metric label="Reports" value="12" note="Open 3" /></div><ActionCard title="Pending Villa" text="Sea Sky Pool Villa รอการตรวจสอบ" action="Review" onClick={() => go("admin-review")} /><StateGallery /></PortalShell>;
-  if (page === "admin-review") return <PortalShell role="Admin" page="admin-villas" go={go}><PortalHead title="Review Villa" subtitle="ตรวจสอบข้อมูล Sea Sky Pool Villa" /><DetailPanel /><div className="review-actions"><button className="primary-button" onClick={() => { setVillaStatus("Verified"); go("admin-villas"); }}>Approve</button><button className="outline-button" onClick={() => { setVillaStatus("Pending"); window.alert("ส่งคำขอแก้ไขให้ Owner แล้ว"); }}>Request Change</button><button className="danger-button" onClick={() => { setVillaStatus("Rejected"); go("admin-villas"); }}>Reject</button></div></PortalShell>;
+  if (page === "admin-review") return <PortalShell role="Admin" page="admin-villas" go={go}><PortalHead title="Review Villa" subtitle="ตรวจสอบข้อมูล Sea Sky Pool Villa" /><DetailPanel /><div className="review-actions"><button className="primary-button" onClick={() => { setVillaStatus("Verified"); go("admin-villas"); }}>Approve</button><button className="outline-button" onClick={() => { setVillaStatus("Pending"); window.alert("ส่งคำขอแก้ไขให้ Merchant แล้ว"); }}>Request Change</button><button className="danger-button" onClick={() => { setVillaStatus("Rejected"); go("admin-villas"); }}>Reject</button></div></PortalShell>;
   const configs: Partial<Record<Page, [string,string]>> = {
     "admin-owners": ["Owners", "บัญชีเจ้าของที่พักและสถานะการใช้งาน"],
     "admin-villas": ["Villas", "รายการ Villa และสถานะล่าสุด"],
     "admin-checks": ["Checks", "ประวัติการตรวจสอบก่อนโอน"],
     "admin-reports": ["Reports", "รายงานปัญหาจากผู้ใช้งาน"],
     "admin-qr": ["QR", "QR Reference และสถานะ"],
-    "admin-packages": ["Packages", "แพ็กเกจที่ Owner ใช้งาน"],
+    "admin-packages": ["Packages", "แพ็กเกจที่ Merchant ใช้งาน"],
   };
   const [title, subtitle] = configs[page] ?? ["Admin", "จัดการระบบ"];
   return <PortalShell role="Admin" page={page} go={go}><PortalHead title={title} subtitle={subtitle} />
-    {page === "admin-owners" && <><DataRow title="Sea Sky Co., Ltd." detail="owner@villacheck.test" status="Verified" action="เปิด Owner" onClick={() => window.alert("Owner: Sea Sky Co., Ltd.")} /><DataRow title="North Stay Group" detail="สถานะถูกระงับชั่วคราว" status="Suspended" action="ตรวจสอบ" onClick={() => window.alert("บัญชี Suspended")} /></>}
+    {page === "admin-owners" && <><DataRow title="Sea Sky Co., Ltd." detail="owner@villacheck.test" status="Verified" action="เปิด Merchant" onClick={() => window.alert("Merchant: Sea Sky Co., Ltd.")} /><DataRow title="North Stay Group" detail="สถานะถูกระงับชั่วคราว" status="Suspended" action="ตรวจสอบ" onClick={() => window.alert("บัญชี Suspended")} /></>}
     {page === "admin-villas" && <DataRow title="Sea Sky Pool Villa" detail="VC-TH-2025-01842" status={villaStatus} action="Review" onClick={() => go("admin-review")} />}
     {page === "admin-checks" && <DataRow title="CHK-2081" detail="Sea Sky Pool Villa · Success" status="Verified" action="ดู Check" onClick={() => window.alert("CHK-2081 · Verification Success · Sea Sky Pool Villa")} />}
     {page === "admin-reports" && <DataRow title="REP-1048" detail="ข้อมูลบัญชีไม่ตรง" status="Pending" action="เปิด Report" onClick={() => window.alert("REP-1048 · อยู่ระหว่างตรวจสอบข้อมูลบัญชี")} />}

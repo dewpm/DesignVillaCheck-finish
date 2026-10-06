@@ -1,8 +1,14 @@
+import { selectedPlanKey, packageIntentKey } from "./packagePlans";
+import { currentAccount } from "./api";
+import VillaMap from "./VillaMap";
+import ProvinceExplorer, { popularProvinces } from "./ProvinceExplorer";
+import { UserRegistration, AdminUsers, MemberDashboard } from "./UserAccounts";
+import Backoffice, { MerchantVerification } from "./Backoffice";
 import { openSupport } from "./support";
 import { usePageNavigation } from "./navigation";
 import { useEffect, useRef, useState } from "react";
 import type { BrowserQRCodeReader, IScannerControls } from "@zxing/browser";
-import { AdminPages, LoginPage, OwnerOnboardingVilla, OwnerPackageAuth, OwnerPages, OwnerRegistration, OwnerSelectVilla, PackageConfirmation, PackageRequestPending, PublicInfoPage, PublicReportPage, PublicReportSuccess, type Page, type UserReport, UserPages } from "./prototype";
+import { LoginPage, OwnerPackageAuth, OwnerRegistration, PublicInfoPage, PublicReportPage, PublicReportSuccess, type Page, type UserReport, UserPages } from "./prototype";
 type IconName =
   | "search"
   | "pin"
@@ -47,7 +53,7 @@ const villas = [
   { name: "Samui Sunset Residence", province: "สุราษฎร์ธานี", guests: "12 คน", status: "รอตรวจสอบ", updated: "02 มิ.ย. 2568", image: photos[0] },
 ];
 
-const provinces = ["ชลบุรี", "ประจวบคีรีขันธ์", "นครราชสีมา", "ภูเก็ต", "เชียงใหม่", "กระบี่", "สุราษฎร์ธานี"];
+const provinces = popularProvinces;
 
 function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -226,7 +232,7 @@ function Home({ go, onSearch }: { go: (p: Page, item?: string) => void; onSearch
       <div className="container hero-signal-strip">
         <div><span className="signal-pulse" /><small>TRUST SIGNAL</small><strong>Live prototype</strong></div>
         <div><small>VERIFICATION LAYER</small><strong>Identity · Contact · Account</strong></div>
-        <div><small>DESTINATION INTELLIGENCE</small><strong>7 provinces connected</strong></div>
+        <div><small>DESTINATION INTELLIGENCE</small><strong>10 popular destinations</strong></div>
         <button onClick={() => go("scan")}><span>SCAN / VERIFY</span><Icon name="arrow" size={17} /></button>
       </div>
     </section>
@@ -242,18 +248,7 @@ function Home({ go, onSearch }: { go: (p: Page, item?: string) => void; onSearch
       </div>
     </section>
 
-    <section className="section province-section">
-      <div className="container province-layout">
-        <div className="province-copy"><span className="kicker">EXPLORE BY PROVINCE</span><h2>เริ่มจากจุดหมาย<br />ที่คุณกำลังจะไป</h2><p>เลือกจังหวัดเพื่อเปิด Directory พร้อมตัวกรองทันที ข้อมูลทั้งหมดใน Prototype เป็นข้อมูลสาธิต</p><div className="province-chips">{provinces.map((province, index) => <button key={province} className={index === 0 ? "active" : ""} onClick={() => onSearch("", province)}><Icon name="pin" size={14} />{province}<small>{index + 2}</small></button>)}</div></div>
-        <div className="province-map">
-          <div className="map-route route-one" /><div className="map-route route-two" />
-          <button className="map-pin map-pin-one" onClick={() => onSearch("", "เชียงใหม่")}><i /><span>เชียงใหม่<small>4 Verified</small></span></button>
-          <button className="map-pin map-pin-two" onClick={() => onSearch("", "นครราชสีมา")}><i /><span>เขาใหญ่<small>8 Verified</small></span></button>
-          <button className="map-pin map-pin-three" onClick={() => onSearch("", "ชลบุรี")}><i /><span>ชลบุรี<small>12 Verified</small></span></button>
-          <div className="map-index"><span>13.3611° N</span><span>100.9847° E</span></div>
-        </div>
-      </div>
-    </section>
+    <ProvinceExplorer onSearch={onSearch} />
 
     <section className="section verified-section showcase-section">
       <div className="container">
@@ -289,8 +284,8 @@ function Home({ go, onSearch }: { go: (p: Page, item?: string) => void; onSearch
     <section className="section pricing-preview">
       <div className="container pricing-banner premium-pricing">
         <div className="pricing-number">05</div>
-        <div><span className="kicker">TRUST INFRASTRUCTURE FOR OWNERS</span><h2>ทำให้ความน่าเชื่อถือ<br />มองเห็นและตรวจสอบได้</h2><p>เริ่มต้น Basic Trust QR ฟรี 90 วัน พร้อม Trust Profile และ QR Verification</p></div>
-        <div><small>START FROM</small><strong>ฟรี</strong><span>90 วัน · ไม่มี Payment</span><button className="sun-button" onClick={() => go("pricing")}>สำรวจทุกแพ็กเกจ</button></div>
+        <div><span className="kicker">TRUST INFRASTRUCTURE FOR OWNERS</span><h2>ทำให้ความน่าเชื่อถือ<br />มองเห็นและตรวจสอบได้</h2><p>เริ่มต้น Basic Trust QR ฟรี 3 เดือน พร้อม Trust Profile และ QR Verification</p></div>
+        <div><small>START FROM</small><strong>ฟรี</strong><span>3 เดือน · ไม่มีค่าใช้จ่าย</span><button className="sun-button" onClick={() => go("pricing")}>สำรวจทุกแพ็กเกจ</button></div>
       </div>
     </section>
   </>;
@@ -381,7 +376,7 @@ function VillaGallery() {
 }
 
 function Detail({ go, villa }: { go: (p: Page, item?: string) => void; villa: typeof villas[number] }) {
-  if (villa.name !== villas[0].name) return <main className="page-bg"><div className="container page-hero"><button className="outline-button" onClick={() => go("directory")}>← กลับไปค้นหา Villa</button><h1>{villa.name}</h1><p>{villa.province} · {villa.guests}</p><img src={villa.image} alt={villa.name} style={{ width: "100%", maxHeight: 480, objectFit: "cover", borderRadius: 24 }} /><h2>{villa.status}</h2><p>อัปเดต {villa.updated} · ข้อมูลที่พักสาธิต</p><button className="outline-button" onClick={() => go("villa-report")}>แจ้งปัญหา</button></div></main>;
+  if (villa.name !== villas[0].name) return <main className="page-bg"><div className="container page-hero"><button className="outline-button" onClick={() => go("directory")}>← กลับไปค้นหา Villa</button><h1>{villa.name}</h1><p>{villa.province} · {villa.guests}</p><img src={villa.image} alt={villa.name} style={{ width: "100%", maxHeight: 480, objectFit: "cover", borderRadius: 24 }} /><h2>{villa.status}</h2><p>อัปเดต {villa.updated} · ข้อมูลที่พักสาธิต</p><VillaMap name={villa.name} /><button className="outline-button" onClick={() => go("villa-report")}>แจ้งปัญหา</button></div></main>;
   return <main className="detail-page">
     <div className="container breadcrumbs"><button onClick={() => go("home")}>หน้าหลัก</button><span>/</span><button onClick={() => go("directory")}>ค้นหาวิลล่า</button><span>/</span><strong>Sea Sky Pool Villa</strong></div>
     <VillaGallery />
@@ -392,7 +387,7 @@ function Detail({ go, villa }: { go: (p: Page, item?: string) => void; villa: ty
         <section className="verification-ledger" aria-labelledby="verification-heading"><div className="ledger-heading"><span className="kicker">VERIFICATION RECORD</span><h2 id="verification-heading">ข้อมูลที่ตรวจสอบ</h2><p>รายการตัวอย่างสำหรับเปรียบเทียบดีไซน์</p></div><div className="ledger-items">{[["01", "ตัวตนเจ้าของ", "เอกสารและชื่อผู้ดูแล"], ["02", "ช่องทางติดต่อ", "โทรศัพท์และ LINE ทางการ"], ["03", "บัญชีรับเงิน", "ชื่อผู้รับเงินตรงกับข้อมูล"]].map(([number, title, description]) => <div key={number}><span className="ledger-number">{number}</span><div><strong>{title}</strong><small>{description}</small></div><span className="ledger-check"><Icon name="check" size={16} />ตรวจแล้ว</span></div>)}</div></section>
         <section className="detail-section"><h2>เกี่ยวกับที่พัก</h2><p>พูลวิลล่าส่วนตัวบรรยากาศสงบ ใกล้หาดบางแสน เหมาะสำหรับครอบครัวและกลุ่มเพื่อน พร้อมสระว่ายน้ำระบบเกลือ พื้นที่ปิ้งย่าง และห้องนั่งเล่นกว้างขวาง</p></section>
         <section className="detail-section"><h2>สิ่งอำนวยความสะดวก</h2><div className="amenities">{[["pool","สระว่ายน้ำส่วนตัว"],["bed","4 ห้องนอน"],["wifi","Wi-Fi ฟรี"],["kitchen","ห้องครัว"],["car","ที่จอดรถ 4 คัน"],["home","พื้นที่ปิ้งย่าง"]].map(a => <span key={a[1]}><Icon name={a[0] as IconName} />{a[1]}</span>)}</div></section>
-        <section className="detail-section location-section"><h2>ตำแหน่งที่ตั้ง</h2><div className="map-placeholder"><div className="map-lines" /><span><Icon name="pin" /></span><small>บางแสน, ชลบุรี</small></div><p><Icon name="pin" />ตำบลแสนสุข อำเภอเมืองชลบุรี จังหวัดชลบุรี 20130</p></section>
+        <VillaMap name={villa.name} />
       </div>
       <aside className="trust-card">
         <div className="trust-card-head"><span><Icon name="shield" size={26} /></span><div><small>VILLACHECK VERIFIED</small><h3>ตรวจสอบข้อมูลแล้ว</h3></div></div>
@@ -601,16 +596,16 @@ function Verify({ go, reference }: { go: (p: Page, item?: string) => void; refer
 }
 
 const plans = [
-  { name: "Basic Trust QR", price: "ฟรี", unit: "90 วัน", desc: "เริ่มต้นสร้างความน่าเชื่อถือ", features: ["Trust Profile พื้นฐาน", "QR Verification", "Verified Badge", "อัปเดตข้อมูล 1 ครั้ง"], cta: "เลือกแพ็กเกจ" },
+  { name: "Basic Trust QR", price: "ฟรี", unit: "3 เดือน", desc: "เริ่มต้นสร้างความน่าเชื่อถือ", features: ["Trust Profile พื้นฐาน", "QR Verification", "Verified Badge", "อัปเดตข้อมูล 1 ครั้ง"], cta: "เลือกแพ็กเกจ" },
   { name: "Trust Starter", price: "฿990", unit: "/ เดือน", desc: "เหมาะสำหรับที่พักเริ่มต้น", features: ["ทุกอย่างใน Basic", "อัปเดตข้อมูลรายเดือน", "สถิติการเข้าชมพื้นฐาน", "QR ดาวน์โหลดคุณภาพสูง"], cta: "เลือกแพ็กเกจ" },
-  { name: "Trust Pro", price: "฿2,900", unit: "/ เดือน", desc: "เพิ่มความมั่นใจให้ลูกค้า", features: ["ทุกอย่างใน Starter", "ระดับ Pro Verification", "Analytics แบบละเอียด", "แสดงผลเด่นใน Directory", "ตรวจสอบทุก 90 วัน"], cta: "เลือกแพ็กเกจ", recommended: true },
+  { name: "Trust Pro", price: "฿2,900", unit: "/ เดือน", desc: "เพิ่มความมั่นใจให้ลูกค้า", features: ["ทุกอย่างใน Starter", "ระดับ Pro Verification", "Analytics แบบละเอียด", "แสดงผลเด่นใน Directory", "QR แยกสำหรับแต่ละ Villa"], cta: "เลือกแพ็กเกจ", recommended: true },
   { name: "Trust Plus", price: "฿4,900", unit: "/ เดือน", desc: "สำหรับธุรกิจที่กำลังเติบโต", features: ["ทุกอย่างใน Pro", "รองรับที่พัก 2 แห่ง", "รายงานประจำเดือน", "Priority Support", "Trust Score Insights"], cta: "เลือกแพ็กเกจ" },
   { name: "Trust Premium", price: "฿9,900", unit: "/ เดือน", desc: "สำหรับเครือที่พักมืออาชีพ", features: ["รองรับสูงสุด 10 แห่ง", "Premium Verification", "Portfolio Dashboard", "Dedicated Account Manager", "Custom Trust Report"], cta: "เลือกแพ็กเกจ" },
 ];
 
 function Pricing({ onSelect, go }: { onSelect: (name: string) => void; go: (page: Page) => void }) {
   return <main className="page-bg pricing-page">
-    <div className="page-hero container"><span className="kicker">PRICING FOR OWNERS</span><h1>แพ็กเกจที่เติบโตไปพร้อมธุรกิจคุณ</h1><p>ราคาต่อเดือนชัดเจน ไม่มี Payment System ใน Prototype<br />Basic Trust QR ใช้งานฟรี 90 วัน</p></div>
+    <div className="page-hero container"><span className="kicker">PRICING FOR MERCHANTS</span><h1>แพ็กเกจที่เติบโตไปพร้อมธุรกิจคุณ</h1><p>สมัครแพ็กเกจที่บัญชี Merchant แล้วเพิ่ม Villa ตามจำนวนสิทธิ์<br />1 Villa = 1 QR · Basic ทดลองฟรี 3 เดือน</p></div>
     <div className="container plan-grid">
       {plans.map(plan => <article className={`plan-card ${plan.recommended ? "recommended" : ""}`} key={plan.name}>
         {plan.recommended && <div className="recommended-label">แนะนำสำหรับคุณ</div>}
@@ -643,14 +638,11 @@ function Footer({ go }: { go: (p: Page, item?: string) => void }) {
 
 export default function App() {
   const [page, navigate, selectedItem] = usePageNavigation<Page>();
-  const [selectedPackage, setSelectedPackage] = useState("Trust Pro");
+  const [selectedPackage, setSelectedPackage] = useState(() => sessionStorage.getItem(selectedPlanKey) || "Trust Starter");
   const [directorySearch, setDirectorySearch] = useState({ query: "", province: "" });
-  const [adminVillaStatus, setAdminVillaStatus] = useState<"Pending" | "Verified" | "Rejected" | "Suspended" | "Expired">("Pending");
   const [qrReference, setQrReference] = useState("VC-TH-2025-01842");
   const [ownerLoggedIn, setOwnerLoggedIn] = useState(false);
   const [userLoggedIn, setUserLoggedIn] = useState(false);
-  const [selectedVilla, setSelectedVilla] = useState("");
-  const [packageStatus, setPackageStatus] = useState("ใช้งานอยู่ / Active");
   const [reportReference, setReportReference] = useState("RPT-1042");
   const [reportCounter, setReportCounter] = useState(1042);
   const [userReports, setUserReports] = useState<UserReport[]>([
@@ -661,14 +653,18 @@ export default function App() {
     setDirectorySearch({ query, province });
     go("directory");
   };
-  const selectPackage = (name: string) => {
+  const selectPackage = async (name: string) => {
     setSelectedPackage(name);
-    setSelectedVilla("");
-    go(ownerLoggedIn ? "owner-select-villa" : "owner-auth");
+    sessionStorage.setItem(selectedPlanKey, name);
+    sessionStorage.setItem(packageIntentKey, "true");
+    try { const account = await currentAccount(); go(account.role === "merchant" ? "owner-add-villa" : "owner-auth"); }
+    catch { go("owner-auth"); }
   };
   const showVerificationResult = (reference: string) => {
-    setQrReference(reference);
-    go("verify");
+    let code = reference.trim();
+    try { const url = new URL(code); code = new URLSearchParams(url.hash.slice(1)).get("item") || code; } catch { /* Raw QR reference. */ }
+    setQrReference(code);
+    go("verify", code);
   };
   const submitReport = (report: Omit<UserReport, "reference" | "guest">) => {
     const reference = `RPT-${reportCounter}`;
@@ -686,20 +682,23 @@ export default function App() {
     page === "directory" ? <Directory go={go} initialQuery={directorySearch.query} initialProvince={directorySearch.province} /> :
     page === "detail" ? <Detail go={go} villa={villas.find(v => v.name === selectedItem) || villas[0]} /> :
     page === "scan" ? <ScanQr go={go} onVerified={showVerificationResult} /> :
-    page === "verify" ? <Verify go={go} reference={qrReference} /> :
+    page === "verify" ? <MerchantVerification go={go} reference={selectedItem || qrReference} /> :
     page === "pricing" ? <Pricing onSelect={selectPackage} go={go} /> :
     isPublicInfoPage ? <PublicInfoPage page={page} go={go} selectedArticle={selectedItem} /> :
     page === "villa-report" ? <PublicReportPage onSubmit={submitReport} /> :
     page === "villa-report-success" ? <PublicReportSuccess go={go} reference={reportReference} linkedToUser={userLoggedIn} /> :
-    page === "login" ? <LoginPage go={go} onAuthenticated={role => { if (role === "Owner") setOwnerLoggedIn(true); if (role === "User") setUserLoggedIn(true); }} /> :
+    page === "user-registration" ? <UserRegistration go={go} reference={selectedItem} /> :
+    page === "admin-users" ? <AdminUsers go={go} /> :
+    page === "user-dashboard" ? <MemberDashboard go={go} /> :
+    page === "login" ? <LoginPage reference={selectedItem} go={go} onAuthenticated={role => { if (role === "Owner") setOwnerLoggedIn(true); if (role === "User") setUserLoggedIn(true); }} /> :
     page === "owner-auth" ? <OwnerPackageAuth go={go} packageName={selectedPackage} onOwnerLogin={() => setOwnerLoggedIn(true)} /> :
     page === "owner-registration" || page === "owner-information" ? <OwnerRegistration go={go} packageName={selectedPackage} /> :
-    page === "owner-onboarding-villa" ? <OwnerOnboardingVilla go={go} onVillaAdded={setSelectedVilla} /> :
-    page === "owner-select-villa" ? <OwnerSelectVilla go={go} onSelect={setSelectedVilla} /> :
-    page === "package-confirmation" ? <PackageConfirmation go={go} packageName={selectedPackage} villaName={selectedVilla} onConfirm={() => { setOwnerLoggedIn(true); setPackageStatus("รอดำเนินการ / Pending"); go("package-request-pending"); }} /> :
-    page === "package-request-pending" ? <PackageRequestPending go={go} packageName={selectedPackage} /> :
-    isOwnerPage ? <OwnerPages page={page} go={go} packageName={selectedPackage} packageStatus={packageStatus} setPackageName={setSelectedPackage} onPackageChange={() => setPackageStatus("รอดำเนินการ / Pending")} /> :
-    isAdminPage ? <AdminPages page={page} go={go} villaStatus={adminVillaStatus} setVillaStatus={setAdminVillaStatus} /> :
+    page === "owner-onboarding-villa" ? <Backoffice page={page} go={go} initialPackage={selectedPackage} /> :
+    page === "owner-select-villa" ? <Backoffice page="owner-villas" go={go} /> :
+    page === "package-confirmation" ? <Backoffice page="owner-package" go={go} /> :
+    page === "package-request-pending" ? <Backoffice page="owner-package" go={go} /> :
+    isOwnerPage ? <Backoffice page={page} go={go} initialPackage={selectedPackage} /> :
+    isAdminPage ? <Backoffice page={page} go={go} initialPackage={selectedPackage} /> :
     <UserPages page={page} go={go} reports={userReports} selectedReference={selectedItem} />;
   const isStandalone = page === "scan" || page === "verify" || page === "login" || page === "owner-auth" || page === "owner-registration" || page === "owner-information" || page === "owner-onboarding-villa" || page === "owner-select-villa" || page === "package-confirmation" || page === "package-request-pending" || isOwnerPage || isAdminPage || isUserPage;
   const showPublicFooter = ["home", "directory", "detail", "pricing", "scan", "verify", "villa-report", "villa-report-success"].includes(page) || isPublicInfoPage;

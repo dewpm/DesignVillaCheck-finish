@@ -1,0 +1,169 @@
+import { DatabaseSync } from "node:sqlite"
+import { mkdirSync, chmodSync } from "node:fs"
+import { dirname } from "node:path"
+import {
+  randomBytes,
+  randomUUID,
+  scryptSync,
+  timingSafeEqual,
+} from "node:crypto"
+
+export const packages = {
+  basic: { name: "Basic Trust QR", amount: 0, capacity: 1 },
+  starter: { name: "Trust Starter", amount: 99000, capacity: 1 },
+  pro: { name: "Trust Pro", amount: 290000, capacity: 1 },
+  plus: { name: "Trust Plus", amount: 490000, capacity: 2 },
+  premium: { name: "Trust Premium", amount: 990000, capacity: 10 },
+}
+export function hashPassword(password) {
+  const salt = randomBytes(16).toString("hex")
+  return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`
+}
+export function verifyPassword(password, value) {
+  const [salt, hash] = value.split(":")
+  return timingSafeEqual(
+    Buffer.from(hash, "hex"),
+    scryptSync(password, salt, 64),
+  )
+}
+export function openDatabase(path) {
+  if (path !== ":memory:")
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+  const db = new DatabaseSync(path)
+  if (path !== ":memory:") chmodSync(path, 0o600)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS subscriptions (
+      owner_id TEXT PRIMARY KEY REFERENCES users(id), package_id TEXT NOT NULL,
+      expires TEXT, payments INTEGER NOT NULL DEFAULT 0, created TEXT NOT NULL
+    );
+    PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = 5000;
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+      password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('merchant','admin','user'))
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
+      csrf TEXT NOT NULL, expires INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id),
+      name TEXT NOT NULL, mime TEXT NOT NULL, bytes BLOB NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS villas (
+      id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES users(id), name TEXT NOT NULL,
+      province TEXT NOT NULL, merchant TEXT NOT NULL, email TEXT NOT NULL, package_id TEXT NOT NULL,
+      document_id TEXT NOT NULL REFERENCES documents(id),
+      status TEXT NOT NULL CHECK(status IN ('pending','approved','changes','rejected')) DEFAULT 'pending',
+      reason TEXT NOT NULL DEFAULT '', qr TEXT UNIQUE, expires TEXT, payments INTEGER NOT NULL DEFAULT 0,
+      created TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS invoices (
+      id TEXT PRIMARY KEY, villa_id TEXT NOT NULL REFERENCES villas(id), amount INTEGER NOT NULL,
+      months INTEGER NOT NULL CHECK(months IN (1,3)),
+      status TEXT NOT NULL CHECK(status IN ('pending','submitted','paid')) DEFAULT 'pending',
+      proof_id TEXT REFERENCES documents(id), reference TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '',
+      created TEXT NOT NULL, paid_at TEXT, confirmed_by TEXT REFERENCES users(id)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS one_open_invoice ON invoices(villa_id) WHERE status != 'paid';
+    CREATE TABLE IF NOT EXISTS mails (
+      id TEXT PRIMARY KEY, villa_id TEXT NOT NULL REFERENCES villas(id), invoice_id TEXT NOT NULL UNIQUE REFERENCES invoices(id),
+      recipient TEXT NOT NULL, subject TEXT NOT NULL, body TEXT NOT NULL, created TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued', attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt INTEGER NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', sent_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS audits (
+      id TEXT PRIMARY KEY, actor_id TEXT NOT NULL REFERENCES users(id), action TEXT NOT NULL,
+      target_id TEXT NOT NULL, created TEXT NOT NULL
+    );
+  `)
+  // A worker interrupted before receiving SMTP's response retries on restart.
+  db.exec("UPDATE mails SET status='queued' WHERE status='sending'")
+  // Add columns without discarding existing merchant/admin data.
+  const migrate = (table, column, definition) => {
+    if (!db.prepare(`PRAGMA table_info(${table})`).all().some(row => row.name === column))
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+  }
+  migrate("users", "created", "TEXT NOT NULL DEFAULT ''")
+  migrate("users", "last_login", "TEXT")
+  migrate("invoices", "subscription_owner", "TEXT REFERENCES users(id)")
+  migrate("invoices", "package_id", "TEXT")
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS one_open_subscription_invoice ON invoices(subscription_owner) WHERE status != 'paid' AND subscription_owner IS NOT NULL")
+  for (const column of ["phone", "bank_name", "account_name", "account_number"])
+    migrate("villas", column, "TEXT NOT NULL DEFAULT ''")
+  db.prepare("UPDATE users SET created=? WHERE created=''").run(new Date().toISOString())
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS oauth_identities (
+      provider TEXT NOT NULL, subject TEXT NOT NULL, user_id TEXT NOT NULL REFERENCES users(id),
+      PRIMARY KEY(provider, subject), UNIQUE(provider, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS oauth_states (
+      state_hash TEXT PRIMARY KEY, provider TEXT NOT NULL, verifier TEXT NOT NULL,
+      return_to TEXT NOT NULL, expires INTEGER NOT NULL
+    );
+  `)
+  return db
+}
+export function transaction(db, work) {
+  db.exec("BEGIN IMMEDIATE")
+  try {
+    const result = work()
+    db.exec("COMMIT")
+    return result
+  } catch (error) {
+    db.exec("ROLLBACK")
+    throw error
+  }
+}
+export function createUser(db, email, password, name, role = "merchant") {
+  const id = randomUUID()
+  db.prepare("INSERT INTO users(id,email,name,password_hash,role) VALUES (?,?,?,?,?)").run(
+    id,
+    email.toLowerCase(),
+    name,
+    hashPassword(password),
+    role,
+  )
+  db.prepare("UPDATE users SET created=? WHERE id=?").run(new Date().toISOString(), id)
+  return { id, email: email.toLowerCase(), name, role }
+}
+export function audit(db, actor, action, target) {
+  db.prepare("INSERT INTO audits VALUES (?,?,?,?,?)").run(
+    randomUUID(),
+    actor.id,
+    action,
+    target,
+    new Date().toISOString(),
+  )
+}
+// Calculate calendar months in Bangkok, independent of the server's timezone.
+export function addMonths(value, months) {
+  const local = new Date(new Date(value).getTime() + 7 * 3600000)
+  const day = local.getUTCDate()
+  local.setUTCDate(1)
+  local.setUTCMonth(local.getUTCMonth() + months)
+  const end = new Date(
+    Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 0),
+  ).getUTCDate()
+  local.setUTCDate(Math.min(day, end))
+  return new Date(local.getTime() - 7 * 3600000).toISOString()
+}
+export function createInvoice(db, villa, appUrl) {
+  const id = randomUUID()
+  const months = villa.payments === 0 ? 3 : 1
+  const plan = packages[villa.package_id]
+  const created = new Date().toISOString()
+  // The first payment covers the selected monthly package and includes a 3-month QR validity.
+  db.prepare(
+    "INSERT INTO invoices(id,villa_id,amount,months,created) VALUES (?,?,?,?,?)",
+  ).run(id, villa.id, plan.amount, months, created)
+  const subject = `VillaCheck: ${villa.name} ${
+    months === 3 ? "ผ่านการอนุมัติ" : "ต่ออายุ QR"
+  } กรุณาชำระแพ็กเกจ`
+  const body = `เรียน ${villa.merchant}\n\nVilla: ${villa.name}\nแพ็กเกจ: ${plan.name}\nยอดชำระ: ฿${(plan.amount / 100).toLocaleString("th-TH")}\nเลขที่ใบแจ้งชำระ: ${id}\n\nเข้าสู่ระบบที่ ${appUrl}/#page=owner-package เพื่อดูวิธีชำระและแนบสลิป\nAdmin จะตรวจยืนยันการชำระ จากนั้น QR มีอายุ ${months} เดือน\n1 Villa = 1 QR การต่ออายุใช้รหัสเดิม`
+  db.prepare(
+    "INSERT INTO mails(id,villa_id,invoice_id,recipient,subject,body,created) VALUES (?,?,?,?,?,?,?)",
+  ).run(randomUUID(), villa.id, id, villa.email, subject, body, created)
+  return id
+}
