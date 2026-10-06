@@ -4,17 +4,13 @@ services:
     runtime: docker
     plan: starter
     healthCheckPath: /api/health
-    disk:
-      name: villacheck-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: APP_URL
         value: https://design-villacheck.vercel.app
       - key: BACKEND_PORT
         value: 10000
-      - key: DATABASE_PATH
-        value: /var/data/villacheck.sqlite
+      - key: DATABASE_URL
+        sync: false
       - key: SEED_DEMO_ACCOUNTS
         value: "false"
       - key: ADMIN_EMAIL

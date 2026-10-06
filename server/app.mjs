@@ -1,3 +1,14 @@
+import { adminBusiness } from "./admin-business.mjs"
+import { generatePaymentQr, paymentQrDto } from "./payment-qr.mjs"
+import {
+  getPlan,
+  listPlans,
+  trustDto,
+  getVerificationMode,
+  levels,
+} from "./catalog.mjs"
+import { PaymentVerificationService } from "./payment-verification.mjs"
+import { confirmPayment } from "./payment-service.mjs"
 import {
   getSubscription,
   subscriptionDto,
@@ -228,11 +239,20 @@ export function createApp(db, config, transport) {
         .get(invoice.proof_id))
     return {
       id: invoice.id,
+      paymentQr: await paymentQrDto(db, invoice.id),
       scope: invoice.subscription_owner ? "merchant" : "villa",
       villaId: invoice.villa_id,
       amount: invoice.amount / 100,
       months: invoice.months,
       status: invoice.status,
+      paymentStatus: invoice.payment_status,
+      verificationMode: invoice.verification_mode,
+      verifiedByAdminId: invoice.confirmed_by,
+      externalTransactionId: invoice.external_transaction_id,
+      currency: invoice.currency,
+      updatedAt: invoice.updated_at || invoice.created,
+      verifiedAt: invoice.paid_at,
+      rejectionReason: invoice.reason,
       reference: invoice.reference,
       reason: invoice.reason,
       created: invoice.created,
@@ -256,10 +276,20 @@ export function createApp(db, config, transport) {
     return {
       id: v.id,
       name: v.name,
+      photoUrl: v.photo_url,
       province: v.province,
       merchant: v.merchant,
       email: v.email,
-      package: `${packages[v.package_id].name} · ฿${packages[v.package_id].amount / 100} / เดือน`,
+      package: `${(await getPlan(db, v.package_id)).name} · ฿${(await getPlan(db, v.package_id)).amount / 100} / เดือน`,
+      documentReviewStatus: {
+        pending: "PENDING_REVIEW",
+        approved: "APPROVED",
+        changes: "CHANGE_REQUESTED",
+        rejected: "REJECTED",
+      }[v.status],
+      reviewedAt: v.reviewed_at,
+      reviewedByAdminId: v.reviewed_by,
+      ...(await trustDto(db, v)),
       packageId: v.package_id,
       phone: v.phone,
       bankName: v.bank_name,
@@ -318,6 +348,10 @@ export function createApp(db, config, transport) {
       paymentInstructions:
         config.paymentInstructions ||
         "ยังไม่ได้ตั้งค่าบัญชีรับชำระ กรุณาติดต่อทีมงานก่อนโอนเงิน",
+      paymentVerificationMode: await getVerificationMode(
+        db,
+        config.paymentVerificationMode || "MANUAL",
+      ),
       paymentConfigured: Boolean(config.paymentInstructions),
       smtpConfigured: Boolean(transport),
     }
@@ -334,7 +368,36 @@ export function createApp(db, config, transport) {
     }
     try {
       const url = new URL(req.url, "http://localhost")
-      const path = url.pathname
+      let path = url.pathname
+      const adminPaymentAction = path.match(
+        /^\/api\/admin\/payments\/([a-f0-9-]+)\/(approve|reject)$/,
+      )
+      if (req.method === "PATCH" && adminPaymentAction)
+        path = `/api/invoices/${adminPaymentAction[1]}/${
+          adminPaymentAction[2] === "approve" ? "confirm" : "reject"
+        }`
+      const slipAction = path.match(/^\/api\/payments\/([a-f0-9-]+)\/slip$/)
+      if (slipAction) path = `/api/invoices/${slipAction[1]}/proof`
+      if (req.method === "POST" && path === "/api/leads") {
+        await rateLimit(req)
+        checkOrigin(req)
+        const data = await body(req)
+        if (!["USER", "MERCHANT"].includes(data.type))
+          fail(400, "ประเภท Lead ไม่ถูกต้อง")
+        const name = text(data.name, "ชื่อ"),
+          address = email(data.email),
+          phone = typeof data.phone === "string" ? data.phone.trim() : ""
+        if (phone.length > 30) fail(400, "เบอร์โทรไม่ถูกต้อง")
+        const now = new Date().toISOString()
+        await db
+          .prepare(
+            "INSERT INTO leads(id,type,name,email,phone,source,created,updated) VALUES (?,?,?,?,?,'CONTACT',?,?)",
+          )
+          .run(randomUUID(), data.type, name, address, phone, now, now)
+        return json({ ok: true })
+      }
+      if (req.method === "GET" && path === "/api/packages")
+        return json({ packages: await listPlans(db) })
       if (req.method === "GET" && path === "/api/health")
         return json({ ok: true })
       if (req.method === "GET" && path === "/api/config")
@@ -417,17 +480,45 @@ export function createApp(db, config, transport) {
       }
       if (req.method === "POST" && path === "/api/auth/logout") {
         const user = await auth(req)
+        const managed = await adminBusiness(
+          db,
+          user,
+          req,
+          path,
+          url,
+          body,
+          config,
+        )
+        if (managed !== undefined) return json(managed)
         await db
           .prepare("DELETE FROM sessions WHERE token_hash=?")
           .run(user.token_hash)
         res.setHeader("Set-Cookie", cookie("", 0))
         return json({ ok: true })
       }
+      if (req.method === "GET" && path === "/api/public/villas") {
+        const rows = await db
+          .prepare(
+            "SELECT * FROM villas WHERE status='approved' AND qr IS NOT NULL ORDER BY created DESC",
+          )
+          .all()
+        return json({
+          villas: await Promise.all(
+            rows.map(async (v) => ({
+              id: v.id,
+              name: v.name,
+              province: v.province,
+              qr: v.qr,
+              photoUrl: v.photo_url,
+              updated: v.created,
+              ...(await trustDto(db, v)),
+            })),
+          ),
+        })
+      }
       if (req.method === "GET" && path.startsWith("/api/public/qr/")) {
         const v = await db
-          .prepare(
-            "SELECT name,province,status,qr,expires,phone,bank_name,account_name,account_number FROM villas WHERE qr=?",
-          )
+          .prepare("SELECT * FROM villas WHERE qr=?")
           .get(decodeURIComponent(path.slice(15)))
         if (!v) fail(404, "ไม่พบ QR ในระบบ")
         let viewer
@@ -439,14 +530,24 @@ export function createApp(db, config, transport) {
         const unlocked = viewer?.role === "user"
         return json({
           name: v.name,
+          photoUrl: v.photo_url,
           province: v.province,
           status: v.status,
           qr: v.qr,
           expires: v.expires,
-          valid:
-            v.status === "approved" &&
-            new Date(v.expires).getTime() > Date.now(),
+          valid: (await trustDto(db, v)).qrStatus === "ACTIVE",
           locked: !unlocked,
+          maskedPhone: "08X-XXX-XXXX",
+          maskedBankAccount: "xxx-x-xxxxx-x",
+          documentReviewStatus: {
+            pending: "PENDING_REVIEW",
+            approved: "APPROVED",
+            changes: "CHANGE_REQUESTED",
+            rejected: "REJECTED",
+          }[v.status],
+          reviewedAt: v.reviewed_at,
+          reviewedByAdminId: v.reviewed_by,
+          ...(await trustDto(db, v)),
           ...(unlocked
             ? {
                 phone: v.phone,
@@ -459,6 +560,57 @@ export function createApp(db, config, transport) {
       }
       if (path.startsWith("/api/")) {
         const user = await auth(req)
+        if (path === "/api/merchant/profile") {
+          if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
+          if (req.method === "POST" || req.method === "PATCH") {
+            const data = await body(req)
+            await db.transaction(async () => {
+              await db
+                .prepare(
+                  "UPDATE users SET name=?,business_name=?,phone=?,address=? WHERE id=?",
+                )
+                .run(
+                  text(data.contactName, "ชื่อผู้ติดต่อ"),
+                  text(data.businessName, "ชื่อธุรกิจ"),
+                  text(data.phone, "เบอร์โทร", 30),
+                  text(data.address, "ที่อยู่", 2000),
+                  user.id,
+                )
+              await db
+                .prepare(
+                  "UPDATE leads SET phone=?,name=?,updated=? WHERE user_id=?",
+                )
+                .run(
+                  data.phone,
+                  data.contactName,
+                  new Date().toISOString(),
+                  user.id,
+                )
+            })
+          }
+          const profile = await db
+            .prepare(
+              "SELECT name,business_name,phone,address,email FROM users WHERE id=?",
+            )
+            .get(user.id)
+          return json({
+            contactName: profile.name,
+            businessName: profile.business_name,
+            phone: profile.phone,
+            address: profile.address,
+            email: profile.email,
+          })
+        }
+        const managed = await adminBusiness(
+          db,
+          user,
+          req,
+          path,
+          url,
+          body,
+          config,
+        )
+        if (managed !== undefined) return json(managed)
         if (req.method === "GET" && path === "/api/admin/users") {
           if (user.role !== "admin") fail(403, "เฉพาะ Admin")
           const users = await db
@@ -487,6 +639,63 @@ export function createApp(db, config, transport) {
         }
         if (!["merchant", "admin"].includes(user.role))
           fail(403, "เฉพาะ Merchant หรือ Admin")
+        const regenerate = path.match(/^\/api\/payments\/([a-f0-9-]+)\/qr$/)
+        if (req.method === "POST" && regenerate) {
+          if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
+          const { invoice } = await invoiceFor(user, regenerate[1])
+          const qr = await db.transaction(() =>
+            generatePaymentQr(db, invoice.id, config.appUrl),
+          )
+          return json(qr)
+        }
+        if (req.method === "GET" && path === "/api/payments/attempt") {
+          const attempt = await db
+            .prepare("SELECT * FROM payment_qrs WHERE id=?")
+            .get(url.searchParams.get("id"))
+          if (!attempt) fail(404, "ไม่พบ Payment QR")
+          await invoiceFor(user, attempt.payment_id)
+          const latest = await paymentQrDto(db, attempt.payment_id)
+          if (latest?.id !== attempt.id || latest.status !== "ACTIVE")
+            fail(410, "Payment QR หมดอายุหรือถูกยกเลิก")
+          return json({ paymentId: attempt.payment_id, qr: latest })
+        }
+        if (req.method === "GET" && path === "/api/admin/payments") {
+          if (user.role !== "admin") fail(403, "เฉพาะ Admin")
+          const status = url.searchParams.get("status")
+          const rows = status
+            ? await db
+                .prepare(
+                  "SELECT * FROM invoices WHERE payment_status=? ORDER BY created DESC",
+                )
+                .all(status)
+            : await db
+                .prepare("SELECT * FROM invoices ORDER BY created DESC")
+                .all()
+          return json({
+            payments: await Promise.all(
+              rows.map(async (row) => ({
+                ...(await invoiceDto(row)),
+                ownerId: (await villaFor(user, row.villa_id)).owner_id,
+                packageId: row.package_id,
+              })),
+            ),
+          })
+        }
+        const paymentRead = path.match(
+          /^\/api\/(admin\/payments|payments)\/([a-f0-9-]+)(\/status)?$/,
+        )
+        if (req.method === "GET" && paymentRead) {
+          if (paymentRead[1] === "admin/payments" && user.role !== "admin")
+            fail(403, "เฉพาะ Admin")
+          const { invoice, villa } = await invoiceFor(user, paymentRead[2])
+          return json({
+            ...(await invoiceDto(invoice)),
+            ownerId: villa.owner_id,
+            ownerName: villa.merchant,
+            villaName: villa.name,
+            packageId: invoice.package_id,
+          })
+        }
         if (req.method === "GET" && path === "/api/state")
           return json(await state(user))
         const docMatch = path.match(/^\/api\/documents\/([a-f0-9-]+)$/)
@@ -506,8 +715,8 @@ export function createApp(db, config, transport) {
         if (req.method === "POST" && path === "/api/subscription") {
           if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
           const data = await body(req)
-          if (!Object.hasOwn(packages, data.packageId))
-            fail(400, "แพ็กเกจไม่ถูกต้อง")
+          const selected = await getPlan(db, data.packageId)
+          if (!selected.active) fail(400, "แพ็กเกจปิดใช้งาน")
           await transaction(db, async () => {
             const current = await getSubscription(db, user.id)
             if (current && current.package_id !== data.packageId)
@@ -518,7 +727,7 @@ export function createApp(db, config, transport) {
                   .prepare("SELECT count(*) AS n FROM villas WHERE owner_id=?")
                   .get(user.id)
               ).n
-              if (count > packages[data.packageId].capacity)
+              if (count > selected.capacity)
                 fail(409, "จำนวน Villa เกินสิทธิ์แพ็กเกจ")
               await db
                 .prepare(
@@ -565,7 +774,7 @@ export function createApp(db, config, transport) {
                 .prepare("SELECT count(*) AS n FROM villas WHERE owner_id=?")
                 .get(user.id)
             ).n
-            if (used >= packages[sub.package_id].capacity)
+            if (used >= (await getPlan(db, sub.package_id)).capacity)
               fail(409, "จำนวน Villa ครบสิทธิ์แพ็กเกจแล้ว")
             const docId = await insertDocument(db, user.id, file)
             const id = randomUUID()
@@ -589,6 +798,17 @@ export function createApp(db, config, transport) {
                 "UPDATE villas SET phone=?,bank_name=?,account_name=?,account_number=? WHERE id=?",
               )
               .run(...contacts, id)
+            const photoUrl = data.photoUrl || ""
+            if (
+              photoUrl &&
+              (typeof photoUrl !== "string" ||
+                photoUrl.length > 2000 ||
+                !photoUrl.startsWith("https://"))
+            )
+              fail(400, "Photo URL ต้องเป็น HTTPS")
+            await db
+              .prepare("UPDATE villas SET photo_url=? WHERE id=?")
+              .run(photoUrl, id)
             await audit(db, user, "villa.create", id)
             return id
           })
@@ -611,28 +831,40 @@ export function createApp(db, config, transport) {
                 data.status === "approved"
                   ? ""
                   : text(data.reason, "เหตุผล", 2000)
+              const level = data.verificationLevel || "VERIFIED"
+              const entitled = await getPlan(db, villa.package_id)
+              if (
+                !levels.includes(level) ||
+                levels.indexOf(level) > levels.indexOf(entitled.max_level)
+              )
+                fail(400, "ระดับเกินสิทธิ์แพ็กเกจ")
               await db
-                .prepare("UPDATE villas SET status=?,reason=? WHERE id=?")
-                .run(data.status, reason, id)
+                .prepare(
+                  "UPDATE villas SET status=?,reason=?,verification_level=?,reviewed_at=?,reviewed_by=? WHERE id=?",
+                )
+                .run(
+                  data.status,
+                  reason,
+                  level,
+                  new Date().toISOString(),
+                  user.id,
+                  id,
+                )
               if (data.status === "approved") {
                 const sub = await getSubscription(db, villa.owner_id)
                 if (!sub) fail(409, "Merchant ต้องสมัครแพ็กเกจที่บัญชีก่อน")
                 if (!(await activateVilla(db, villa))) {
-                  const invoiceId = await subscriptionInvoice(
-                    db,
-                    villa,
-                    config.appUrl,
-                  )
-                  if (sub.package_id === "basic" && sub.payments === 0) {
-                    await db
-                      .prepare(
-                        "UPDATE invoices SET status='paid',paid_at=?,confirmed_by=? WHERE id=?",
-                      )
-                      .run(new Date().toISOString(), user.id, invoiceId)
-                    await activateSubscription(db, villa.owner_id, 3)
-                  }
+                  const plan = await getPlan(db, sub.package_id)
+                  if (plan.trial_months > 0 && sub.payments === 0)
+                    await activateSubscription(
+                      db,
+                      villa.owner_id,
+                      plan.trial_months,
+                    )
+                  else await subscriptionInvoice(db, villa, config.appUrl)
                 }
               }
+
               await audit(db, user, `villa.${data.status}`, id)
             } else if (action === "resubmit") {
               if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
@@ -652,10 +884,10 @@ export function createApp(db, config, transport) {
                 fail(409, "ต้องเปิดใช้ QR ก่อนต่ออายุแพ็กเกจ")
               let sub = await getSubscription(db, villa.owner_id)
               if (!sub) fail(409, "ไม่พบแพ็กเกจ Merchant")
-              if (sub.package_id === "basic") {
+              if ((await getPlan(db, sub.package_id)).amount === 0) {
                 if (
-                  !Object.hasOwn(packages, data.packageId) ||
-                  data.packageId === "basic"
+                  !(await getPlan(db, data.packageId)).active ||
+                  (await getPlan(db, data.packageId)).amount === 0
                 )
                   fail(400, "ทดลองฟรีใช้ได้ครั้งเดียว กรุณาเลือกแพ็กเกจชำระเงินเพื่อต่ออายุ")
               }
@@ -663,7 +895,9 @@ export function createApp(db, config, transport) {
                 db,
                 villa,
                 config.appUrl,
-                sub.package_id === "basic" ? data.packageId : undefined,
+                (await getPlan(db, sub.package_id)).amount === 0
+                  ? data.packageId
+                  : undefined,
               )
               await audit(db, user, "subscription.renew", user.id)
             }
@@ -675,7 +909,7 @@ export function createApp(db, config, transport) {
         const invoiceAction = path.match(
           /^\/api\/invoices\/([a-f0-9-]+)\/(proof|confirm|reject)$/,
         )
-        if (req.method === "POST" && invoiceAction) {
+        if (["POST", "PATCH"].includes(req.method) && invoiceAction) {
           const [, id, action] = invoiceAction
           const data = await body(req)
           await transaction(db, async () => {
@@ -683,10 +917,16 @@ export function createApp(db, config, transport) {
             if (villa.status !== "approved") fail(409, "Villa ยังไม่ผ่านการอนุมัติ")
             if (action === "proof") {
               if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
-              if (!config.paymentInstructions) fail(409, "ยังไม่ได้ตั้งค่าบัญชีรับชำระ")
+
               if (invoice.status !== "pending")
                 fail(409, "ใบแจ้งชำระนี้อยู่ระหว่างตรวจสอบหรือชำระแล้ว")
               const reference = text(data.reference, "เลขอ้างอิงการโอน", 150)
+              const duplicate = await db
+                .prepare(
+                  "SELECT id FROM invoices WHERE external_transaction_id=? AND id!=?",
+                )
+                .get(reference, id)
+              if (duplicate) fail(409, "เลขธุรกรรมนี้ถูกใช้ยืนยันการชำระแล้ว")
               const docId = await insertDocument(
                 db,
                 user.id,
@@ -694,9 +934,25 @@ export function createApp(db, config, transport) {
               )
               await db
                 .prepare(
-                  "UPDATE invoices SET status='submitted',proof_id=?,reference=?,reason='' WHERE id=?",
+                  "UPDATE invoices SET status='submitted',payment_status='PENDING_REVIEW',verification_mode=?,updated_at=?,proof_id=?,reference=?,reason='' WHERE id=?",
                 )
-                .run(docId, reference, id)
+                .run(
+                  await getVerificationMode(
+                    db,
+                    config.paymentVerificationMode || "MANUAL",
+                  ),
+                  new Date().toISOString(),
+                  docId,
+                  reference,
+                  id,
+                )
+              const verification = new PaymentVerificationService(
+                await getVerificationMode(
+                  db,
+                  config.paymentVerificationMode || "MANUAL",
+                ),
+              )
+              await verification.verify(id) // AUTO placeholder safely stays PENDING_REVIEW.
               await audit(db, user, "invoice.proof", id)
             } else {
               if (user.role !== "admin") fail(403, "เฉพาะ Admin")
@@ -706,46 +962,29 @@ export function createApp(db, config, transport) {
               if (action === "reject") {
                 await db
                   .prepare(
-                    "UPDATE invoices SET status='pending',reason=? WHERE id=?",
+                    "UPDATE invoices SET status='pending',payment_status='REJECTED',updated_at=?,reason=? WHERE id=?",
                   )
-                  .run(text(data.reason, "เหตุผล", 2000), id)
+                  .run(
+                    new Date().toISOString(),
+                    text(data.reason, "เหตุผล", 2000),
+                    id,
+                  )
               } else {
-                const now = new Date()
-                const base =
-                  villa.expires && new Date(villa.expires) > now
-                    ? new Date(villa.expires)
-                    : now
-                const expires = addMonths(base, invoice.months)
+                const transactionId = data.externalTransactionId
+                  ? text(data.externalTransactionId, "เลขธุรกรรม", 150)
+                  : invoice.reference
+                const duplicate = await db
+                  .prepare(
+                    "SELECT id FROM invoices WHERE external_transaction_id=? AND id!=?",
+                  )
+                  .get(transactionId, id)
+                if (duplicate) fail(409, "เลขธุรกรรมนี้ถูกใช้ยืนยันการชำระแล้ว")
                 await db
                   .prepare(
-                    "UPDATE invoices SET status='paid',paid_at=?,confirmed_by=? WHERE id=?",
+                    "UPDATE invoices SET external_transaction_id=?,external_provider='MANUAL' WHERE id=?",
                   )
-                  .run(now.toISOString(), user.id, id)
-                if (invoice.subscription_owner) {
-                  if (invoice.package_id) {
-                    await db
-                      .prepare(
-                        "UPDATE subscriptions SET package_id=? WHERE owner_id=?",
-                      )
-                      .run(invoice.package_id, invoice.subscription_owner)
-                    await db
-                      .prepare(
-                        "UPDATE villas SET package_id=? WHERE owner_id=?",
-                      )
-                      .run(invoice.package_id, invoice.subscription_owner)
-                  }
-                  await activateSubscription(
-                    db,
-                    invoice.subscription_owner,
-                    invoice.months,
-                    now,
-                  )
-                } else
-                  await db
-                    .prepare(
-                      "UPDATE villas SET qr=?,expires=?,payments=payments+1 WHERE id=?",
-                    )
-                    .run(villa.qr || `VC-${randomUUID()}`, expires, villa.id)
+                  .run(transactionId, id)
+                await confirmPayment(db, invoice, villa, user.id)
               }
               await audit(db, user, `invoice.${action}`, id)
             }
@@ -806,20 +1045,25 @@ export function createApp(db, config, transport) {
         json(
           {
             error:
-              error instanceof ApiError
+              error instanceof ApiError ||
+              (error.status >= 400 && error.status < 500)
                 ? error.message
                 : "เกิดข้อผิดพลาดที่เซิร์ฟเวอร์",
           },
           error.status || 500,
         )
       else res.end()
-      if (!(error instanceof ApiError))
+      if (
+        !(error instanceof ApiError) &&
+        !(error.status >= 400 && error.status < 500)
+      )
         console.error("Backend error:", error.code || error.name)
     }
   })
   server.requestTimeout = 30000
   server.headersTimeout = 15000
   server.on("close", () => worker.stop())
+  server.authenticate = auth
   server.runMail = worker.run
   return server
 }

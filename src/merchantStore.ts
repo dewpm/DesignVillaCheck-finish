@@ -1,10 +1,14 @@
+import type { PaymentQrData } from "./PaymentQr";
 export type Document = { name: string; data: string; type: string }
 export type Invoice = {
+  paymentQr: PaymentQrData | null
   scope: "merchant" | "villa"
   id: string
   villaId: string
   amount: number
   months: number
+  paymentStatus: "WAITING_FOR_SLIP" | "PENDING_REVIEW" | "VERIFYING" | "VERIFIED" | "REJECTED" | "FAILED"
+  verificationMode: "MANUAL" | "AUTO"
   status: "pending" | "submitted" | "paid"
   reference: string
   reason: string
@@ -26,6 +30,9 @@ export type MerchantVilla = {
   packageId: string
   document: Document
   status: "pending" | "approved" | "changes" | "rejected"
+  qrStatus: string
+  verificationLevel: string
+  premiumBanner: boolean
   reason: string
   qr: string
   expires: string
@@ -50,7 +57,7 @@ export type Account = {
   role: "merchant" | "admin" | "user"
 }
 export type Store = {
-  subscription: { packageId: string; name: string; amount: number; capacity: number; used: number; expires: string | null; active: boolean; payments: number } | null
+  subscription: { packageId: string; name: string; amount: number; capacity: number; used: number; expires: string | null; active: boolean; status: string; renewalDate: string | null; payments: number } | null
   villas: MerchantVilla[]
   mails: Mail[]
   user: Account

@@ -4,35 +4,62 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
+    "dev": "node scripts/dev.mjs",
+    "build": "prisma generate && npm run build:backend && node scripts/deploy-db.mjs --if-configured && node scripts/seed-public-demo.mjs && next build --webpack",
+    "preview": "next start --port 8443",
     "format": "oxfmt",
-    "backend": "node --env-file-if-exists=.env server/index.mjs",
-    "backend:dev": "node --watch --env-file-if-exists=.env server/index.mjs",
+    "backend": "npm run build:backend && node --env-file-if-exists=.env .build/backend/main.js",
+    "backend:dev": "npm run build:backend && node --watch --env-file-if-exists=.env .build/backend/main.js",
     "test:backend": "node --test server/*.test.mjs",
-    "start": "NODE_ENV=production node --env-file-if-exists=.env server/index.mjs"
+    "start": "next start --port 8443",
+    "build:backend": "node scripts/build-backend.mjs",
+    "db:generate": "prisma generate",
+    "db:deploy": "prisma generate && npm run build:backend && node scripts/deploy-db.mjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.backend.json --noEmit",
+    "lint": "eslint app pages backend src --max-warnings 0",
+    "prebackend": "prisma generate",
+    "db:local": "node scripts/local-postgres.mjs",
+    "db:seed": "prisma generate && npm run build:backend && node scripts/seed-demo.mjs"
   },
   "dependencies": {
+    "@nestjs/common": "^12.1.2",
+    "@nestjs/core": "^12.1.2",
+    "@nestjs/platform-express": "^12.1.2",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "^7.10.0",
     "@vercel/functions": "^3.9.11",
     "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
+    "dotenv": "^18.0.5",
+    "next": "^16.3.8",
     "nodemailer": "^10.0.15",
     "pg": "^8.23.1",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.0.0",
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/express": "^5.0.6",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^6.0.0",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "eslint": "^10.12.0",
     "oxfmt": "^0.2.0",
+    "prisma": "^7.10.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.0",
-    "vite": "^8.0.5"
+    "tsx": "^4.23.15",
+    "typescript": "5.9",
+    "typescript-eslint": "^8.71.1"
   },
   "engines": {
     "node": "24.x"
+  },
+  "overrides": {
+    "deepmerge-ts": "8.0.2",
+    "mysql2": "3.24.5"
   }
 }

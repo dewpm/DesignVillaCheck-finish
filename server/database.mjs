@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite"
 import { wrapSqlite } from "./database-adapter.mjs"
-import { mkdirSync, chmodSync } from "node:fs"
+import { mkdirSync, chmodSync, readFileSync } from "node:fs"
 import { dirname } from "node:path"
 import {
   randomBytes,
@@ -81,6 +81,9 @@ export function openDatabase(path) {
       target_id TEXT NOT NULL, created TEXT NOT NULL
     );
   `)
+  db.exec(
+    readFileSync(new URL("./business-schema.sql", import.meta.url), "utf8"),
+  )
   // A worker interrupted before receiving SMTP's response retries on restart.
   db.exec("UPDATE mails SET status='queued' WHERE status='sending'")
   // Add columns without discarding existing merchant/admin data.
@@ -93,8 +96,35 @@ export function openDatabase(path) {
     )
       db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
   }
+  migrate(
+    "invoices",
+    "payment_status",
+    "TEXT NOT NULL DEFAULT 'WAITING_FOR_SLIP'",
+  )
+  migrate("invoices", "verification_mode", "TEXT NOT NULL DEFAULT 'MANUAL'")
+  migrate("invoices", "currency", "TEXT NOT NULL DEFAULT 'THB'")
+  migrate("invoices", "external_transaction_id", "TEXT")
+  migrate("invoices", "external_provider", "TEXT")
+  migrate("invoices", "updated_at", "TEXT")
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS unique_payment_transaction ON invoices(external_transaction_id) WHERE external_transaction_id IS NOT NULL",
+  )
+  db.exec(
+    "UPDATE invoices SET payment_status=CASE WHEN status='paid' THEN 'VERIFIED' WHEN status='submitted' THEN 'PENDING_REVIEW' ELSE payment_status END",
+  )
+  migrate(
+    "subscriptions",
+    "lifecycle",
+    "TEXT NOT NULL DEFAULT 'PENDING_RENEWAL'",
+  )
+  migrate("villas", "verification_level", "TEXT NOT NULL DEFAULT 'VERIFIED'")
+  migrate("villas", "photo_url", "TEXT NOT NULL DEFAULT ''")
+  migrate("villas", "reviewed_at", "TEXT")
+  migrate("villas", "reviewed_by", "TEXT")
   migrate("users", "created", "TEXT NOT NULL DEFAULT ''")
   migrate("users", "last_login", "TEXT")
+  for (const field of ["business_name", "phone", "address"])
+    migrate("users", field, "TEXT NOT NULL DEFAULT ''")
   migrate("invoices", "subscription_owner", "TEXT REFERENCES users(id)")
   migrate("invoices", "package_id", "TEXT")
   db.exec(
@@ -115,6 +145,26 @@ export function openDatabase(path) {
       return_to TEXT NOT NULL, expires INTEGER NOT NULL
     );
   `)
+  for (const [id, plan] of Object.entries(packages))
+    db.prepare(
+      "INSERT INTO package_catalog(id,name,slug,description,amount,capacity,trial_months,max_level,banner,sort_order,created,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+    ).run(
+      id,
+      plan.name,
+      id,
+      "แพ็กเกจ Merchant",
+      plan.amount,
+      plan.capacity,
+      id === "basic" ? 3 : 0,
+      id === "premium" ? "PREMIUM_VERIFIED" : "VERIFIED",
+      id === "premium" ? 1 : 0,
+      Object.keys(packages).indexOf(id),
+      new Date().toISOString(),
+      new Date().toISOString(),
+    )
+  db.exec(
+    "INSERT INTO leads(id,user_id,type,name,email,source,created,updated) SELECT id,id,UPPER(role),name,email,'REGISTRATION',created,created FROM users WHERE role IN ('user','merchant') AND id NOT IN (SELECT user_id FROM leads WHERE user_id IS NOT NULL)",
+  )
   return wrapSqlite(db)
 }
 export async function transaction(db, work) {
@@ -130,6 +180,21 @@ export async function createUser(db, email, password, name, role = "merchant") {
   await db
     .prepare("UPDATE users SET created=? WHERE id=?")
     .run(new Date().toISOString(), id)
+  if (["user", "merchant"].includes(role))
+    await db
+      .prepare(
+        "INSERT INTO leads(id,user_id,type,name,email,source,created,updated) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(user_id) DO NOTHING",
+      )
+      .run(
+        randomUUID(),
+        id,
+        role.toUpperCase(),
+        name,
+        email.toLowerCase(),
+        "REGISTRATION",
+        new Date().toISOString(),
+        new Date().toISOString(),
+      )
   return { id, email: email.toLowerCase(), name, role }
 }
 export async function audit(db, actor, action, target) {
@@ -152,14 +217,16 @@ export function addMonths(value, months) {
 export async function createInvoice(db, villa, appUrl) {
   const id = randomUUID()
   const months = villa.payments === 0 ? 3 : 1
-  const plan = packages[villa.package_id]
+  const plan = await db
+    .prepare("SELECT * FROM package_catalog WHERE id=?")
+    .get(villa.package_id)
   const created = new Date().toISOString()
   // The first payment covers the selected monthly package and includes a 3-month QR validity.
   await db
     .prepare(
-      "INSERT INTO invoices(id,villa_id,amount,months,created) VALUES (?,?,?,?,?)",
+      "INSERT INTO invoices(id,villa_id,amount,months,created,updated_at) VALUES (?,?,?,?,?,?)",
     )
-    .run(id, villa.id, plan.amount, months, created)
+    .run(id, villa.id, plan.amount, months, created, created)
   const subject = `VillaCheck: ${villa.name} ${
     months === 3 ? "ผ่านการอนุมัติ" : "ต่ออายุ QR"
   } กรุณาชำระแพ็กเกจ`

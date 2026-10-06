@@ -124,15 +124,17 @@ test("merchant package capacity, one bill, separate villa QR, shared renewal and
           )
         let state = (await request("/api/state", undefined, owner)).value
         const invoices = state.villas.flatMap((v) => v.invoices)
-        assert.equal(invoices.length, 1)
-        assert.equal(invoices[0].amount, plan.amount / 100)
-        assert.equal(invoices[0].scope, "merchant")
+        assert.equal(invoices.length, plan.amount ? 1 : 0)
+        if (plan.amount) {
+          assert.equal(invoices[0].amount, plan.amount / 100)
+          assert.equal(invoices[0].scope, "merchant")
+        }
         const invoice = invoices[0]
         if (plan.amount) {
           assert.ok(state.villas.every((v) => !v.qr))
           await request(
             `/api/invoices/${invoice.id}/proof`,
-            { document, reference: "BANK-TRANSFER" },
+            { document, reference: `BANK-TRANSFER-${invoice.id}` },
             owner,
           )
           assert.equal(
@@ -140,7 +142,7 @@ test("merchant package capacity, one bill, separate villa QR, shared renewal and
               .status,
             200,
           )
-        } else assert.equal(invoice.status, "paid")
+        } else assert.equal(invoices.length, 0)
         state = (await request("/api/state", undefined, owner)).value
         assert.equal(state.subscription.active, true)
         assert.equal(state.subscription.used, plan.capacity)
@@ -183,11 +185,36 @@ test("merchant package capacity, one bill, separate villa QR, shared renewal and
           .filter((i) => i.status === "pending")
         assert.equal(pending.length, 1)
         assert.equal(pending[0].months, 1)
+        assert.equal(pending[0].paymentStatus, "WAITING_FOR_SLIP")
+        if (plan.amount) {
+          const reused = await request(
+            `/api/payments/${pending[0].id}/slip`,
+            { document, reference: `BANK-TRANSFER-${invoice.id}` },
+            owner,
+          )
+          assert.equal(reused.status, 409)
+        }
+        const reviewList = await request(
+          "/api/admin/payments",
+          undefined,
+          admin,
+        )
+        assert.equal(reviewList.status, 200)
+        assert.equal(
+          (await request("/api/admin/payments", undefined, owner)).status,
+          403,
+        )
         await request(
           `/api/invoices/${pending[0].id}/proof`,
-          { document, reference: "RENEWAL-TRANSFER" },
+          { document, reference: `RENEWAL-TRANSFER-${pending[0].id}` },
           owner,
         )
+        const paymentStatus = await request(
+          `/api/payments/${pending[0].id}/status`,
+          undefined,
+          owner,
+        )
+        assert.equal(paymentStatus.value.paymentStatus, "PENDING_REVIEW")
         await request(`/api/invoices/${pending[0].id}/confirm`, {}, admin)
         state = (await request("/api/state", undefined, owner)).value
         assert.deepEqual(state.villas.map((v) => v.qr).sort(), before)
@@ -197,6 +224,12 @@ test("merchant package capacity, one bill, separate villa QR, shared renewal and
         )
         if (planId === "basic") assert.equal(state.subscription.capacity, 10)
         const renewed = state.subscription.expires
+        const confirmedStatus = await request(
+          `/api/payments/${pending[0].id}/status`,
+          undefined,
+          owner,
+        )
+        assert.equal(confirmedStatus.value.paymentStatus, "VERIFIED")
         await request(`/api/invoices/${pending[0].id}/confirm`, {}, admin)
         assert.equal(
           (await request("/api/state", undefined, owner)).value.subscription

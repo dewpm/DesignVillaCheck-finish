@@ -1,0 +1,8 @@
+{
+ "compilerOptions": {
+  "target":"ES2022","module":"NodeNext","moduleResolution":"NodeNext","rootDir":".","outDir":".build",
+  "experimentalDecorators":true,"emitDecoratorMetadata":true,"strict":true,"skipLibCheck":true,
+  "allowJs":true,"checkJs":false,"esModuleInterop":true,"types":["node"]
+ },
+ "include":["backend/**/*.ts","server/*.mjs"],"exclude":["server/*.test.mjs","server/test-database.mjs"]
+}

@@ -1,5 +1,5 @@
 import { waitUntil } from "@vercel/functions"
-import { startServer } from "../server/index.mjs"
+import { startServer } from "./index.mjs"
 
 export function createVercelHandler(env = process.env) {
   env = { ...env, DATABASE_URL: env.DATABASE_URL || env.VillaCheck_DATABASE_URL }

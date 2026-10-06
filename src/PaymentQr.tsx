@@ -1,0 +1,11 @@
+import { useEffect, useState } from "react";
+import { api } from "./api";
+export type PaymentQrData={id:string;status:string;expiresAt:string;generatedAt:string;qrData:string|null;payload:string|null;serverTime:string;kind:string};
+export default function PaymentQr({paymentId,initial}:{paymentId:string;initial:PaymentQrData|null}) {
+ const [remaining,setRemaining]=useState(0);
+ const [qr,setQr]=useState(initial),[error,setError]=useState(""),[busy,setBusy]=useState(false);
+ const refresh=()=>void api<{paymentQr:PaymentQrData|null}>(`/payments/${paymentId}/status`).then(v=>setQr(v.paymentQr)).catch(e=>setError(e.message));
+ useEffect(()=>{refresh();const timer=window.setInterval(refresh,15000);return()=>clearInterval(timer);},[paymentId]);
+ useEffect(()=>{if(!qr)return;const offset=Date.parse(qr.serverTime)-Date.now();const tick=()=>{const seconds=Math.max(0,Math.ceil((Date.parse(qr.expiresAt)-Date.now()-offset)/1000));setRemaining(seconds);if(seconds===0 && qr.status==="ACTIVE")refresh();};tick();const timer=window.setInterval(tick,1000);return()=>clearInterval(timer);},[qr]);
+ return <section><h3>Payment QR</h3><p>QR เปิดหน้าชำระเงิน VillaCheck และแนบสลิป · ไม่ใช่ QR โอนเงินของธนาคาร</p>{qr?.qrData&&remaining>0&&<><img width="220" height="220" src={qr.qrData} alt="Payment page QR"/><p>เหลือ {Math.floor(remaining/3600)}:{String(Math.floor(remaining/60)%60).padStart(2,"0")}:{String(remaining%60).padStart(2,"0")} · หมดอายุ {new Date(qr.expiresAt).toLocaleString("th-TH")}</p><a href={qr.payload!}>เปิดหน้าชำระเงิน</a></>}<p>สถานะจาก Backend: {qr?.status||"ยังไม่มี QR"}</p>{qr?.status!=="PAID"&&<button disabled={busy} onClick={async()=>{setBusy(true);try{setQr(await api<PaymentQrData>(`/payments/${paymentId}/qr`,{}));setError("");}catch(e){setError(e instanceof Error?e.message:"สร้าง QR ไม่สำเร็จ");}finally{setBusy(false);}}}>สร้าง Payment QR ใหม่ (3 ชั่วโมง)</button>}{error&&<p role="alert">{error}</p>}</section>;
+}

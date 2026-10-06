@@ -1,3 +1,4 @@
+import { qrSvg, paymentQrDto } from "./payment-qr.mjs"
 export function createMailWorker(db, config, transport) {
   let active
   function run() {
@@ -19,11 +20,21 @@ export function createMailWorker(db, config, transport) {
       )
       if (!mail) break
       try {
+        const qr = await paymentQrDto(db, mail.invoice_id)
         await transport.sendMail({
+          attachments: qr?.payload
+            ? [
+                {
+                  filename: "payment-qr.svg",
+                  content: qrSvg(qr.payload),
+                  contentType: "image/svg+xml",
+                },
+              ]
+            : [],
           from: config.smtpFrom,
           to: mail.recipient,
           subject: mail.subject,
-          text: mail.body,
+          text: `${mail.body}\n\n${config.paymentInstructions || "กรุณาติดต่อทีมงานเพื่อรับข้อมูลบัญชีชำระเงิน"}`,
           messageId: `<${mail.id}@villacheck.local>`,
         })
         await db

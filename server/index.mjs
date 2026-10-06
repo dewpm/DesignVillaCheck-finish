@@ -1,19 +1,24 @@
-import { resolve } from "node:path"
+import { resolve, dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { createApp } from "./app.mjs"
 import { createUser, hashPassword, openDatabase } from "./database.mjs"
 import { openPostgres } from "./postgres.mjs"
-export async function startServer(env = process.env, { listen = true } = {}) {
-  env = { ...env, DATABASE_URL: env.DATABASE_URL || env.VillaCheck_DATABASE_URL }
+/** @param {NodeJS.ProcessEnv} env
+ * @param {{listen?: boolean, databaseFactory?: (url?: string) => Promise<any>}} options */
+export async function startServer(env = process.env, { listen = true, databaseFactory } = {}) {
+  env = {
+    ...env,
+    DATABASE_URL: env.DATABASE_URL || env.VillaCheck_DATABASE_URL,
+  }
   const production = env.NODE_ENV === "production"
-  const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
+  const root = resolve(dirname(fileURLToPath(import.meta.url)), "..")
   const appUrl = (env.APP_URL || "http://localhost:8443").replace(/\/$/, "")
   if (production && (!env.APP_URL || !appUrl.startsWith("https://")))
     throw Error("APP_URL must be your public HTTPS URL in production")
   if (production && env.SEED_DEMO_ACCOUNTS === "true")
     throw Error("Demo accounts cannot be enabled in production")
   const seedDemo = !production && env.SEED_DEMO_ACCOUNTS === "true"
-  const db = env.DATABASE_URL
+  const db = databaseFactory ? await databaseFactory(env.DATABASE_URL) : env.DATABASE_URL
     ? await openPostgres(env.DATABASE_URL)
     : openDatabase(
         env.DATABASE_PATH || resolve(root, "server/data/villacheck.sqlite"),
@@ -79,6 +84,7 @@ export async function startServer(env = process.env, { listen = true } = {}) {
     }
     const config = {
       appUrl,
+      paymentVerificationMode: env.PAYMENT_VERIFICATION_MODE || "MANUAL",
       googleClientId: env.GOOGLE_CLIENT_ID,
       googleClientSecret: env.GOOGLE_CLIENT_SECRET,
       facebookClientId: env.FACEBOOK_APP_ID,

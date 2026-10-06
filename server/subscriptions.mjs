@@ -1,3 +1,5 @@
+import { generatePaymentQr } from "./payment-qr.mjs"
+import { getPlan } from "./catalog.mjs"
 import { randomUUID } from "node:crypto"
 import { addMonths, packages, createInvoice } from "./database.mjs"
 export async function getSubscription(db, ownerId) {
@@ -8,7 +10,7 @@ export async function getSubscription(db, ownerId) {
 export async function subscriptionDto(db, ownerId) {
   const sub = await getSubscription(db, ownerId)
   if (!sub) return null
-  const plan = packages[sub.package_id]
+  const plan = await getPlan(db, sub.package_id)
   const used = (
     await db
       .prepare("SELECT count(*) AS n FROM villas WHERE owner_id=?")
@@ -21,7 +23,17 @@ export async function subscriptionDto(db, ownerId) {
     capacity: plan.capacity,
     used,
     expires: sub.expires,
-    active: Boolean(sub.expires && new Date(sub.expires) > new Date()),
+    active:
+      !["SUSPENDED", "CANCELLED"].includes(sub.lifecycle) &&
+      Boolean(sub.expires && new Date(sub.expires) > new Date()),
+    status: ["SUSPENDED", "CANCELLED"].includes(sub.lifecycle)
+      ? sub.lifecycle
+      : sub.expires
+        ? new Date(sub.expires) > new Date()
+          ? "ACTIVE"
+          : "EXPIRED"
+        : "PENDING_RENEWAL",
+    renewalDate: sub.expires,
     payments: sub.payments,
   }
 }
@@ -37,7 +49,7 @@ export async function activateSubscription(
   const expires = addMonths(base, months)
   await db
     .prepare(
-      "UPDATE subscriptions SET expires=?,payments=payments+1 WHERE owner_id=?",
+      "UPDATE subscriptions SET expires=?,lifecycle='ACTIVE',payments=payments+1 WHERE owner_id=?",
     )
     .run(expires, ownerId)
   for (const villa of await db
@@ -52,6 +64,7 @@ export async function activateSubscription(
 }
 export async function activateVilla(db, villa) {
   const sub = await getSubscription(db, villa.owner_id)
+  if (["SUSPENDED", "CANCELLED"].includes(sub?.lifecycle)) return false
   if (!sub?.expires || new Date(sub.expires) <= new Date()) return false
   await db
     .prepare("UPDATE villas SET qr=?,expires=?,payments=? WHERE id=?")
@@ -75,14 +88,15 @@ export async function subscriptionInvoice(db, villa, appUrl, selectedPlan) {
   await db
     .prepare("UPDATE invoices SET subscription_owner=?,package_id=? WHERE id=?")
     .run(villa.owner_id, planId, id)
-  const plan = packages[planId]
+  const plan = await getPlan(db, planId)
+  const paymentQr = await generatePaymentQr(db, id, appUrl)
   await db
     .prepare("UPDATE mails SET subject=?,body=? WHERE invoice_id=?")
     .run(
       `VillaCheck: ${plan.name} สำหรับบัญชี Merchant ${
         plan.amount ? "แจ้งชำระแพ็กเกจ" : "เปิดใช้งานทดลองฟรี"
       }`,
-      `เรียน ${villa.merchant}\n\nแพ็กเกจบัญชี Merchant: ${plan.name}\nรองรับ ${plan.capacity} Villa · แต่ละ Villa มี QR ของตัวเอง\nยอดชำระ ฿${plan.amount / 100} ต่อบัญชีแพ็กเกจ\nเลขที่ใบแจ้งชำระ: ${id}\n${appUrl}/#page=owner-package\n${
+      `เรียน ${villa.merchant}\n\nแพ็กเกจบัญชี Merchant: ${plan.name}\nรองรับ ${plan.capacity} Villa · แต่ละ Villa มี QR ของตัวเอง\nยอดชำระ ฿${plan.amount / 100} ต่อบัญชีแพ็กเกจ\nVilla: ${villa.name}\nเลขที่ใบแจ้งชำระ: ${id}\nPayment QR (เปิดหน้าชำระเงิน): ${paymentQr.payload}\nหมดอายุ: ${paymentQr.expiresAt}\n${appUrl}/#page=owner-package\n${
         plan.amount
           ? "กรุณาแนบสลิปเพื่อให้ Admin ยืนยันการชำระ แล้วระบบจะเปิดใช้ QR ของ Villa ที่อนุมัติแล้ว"
           : "Admin อนุมัติแล้ว เปิดใช้ QR ทดลองฟรี 3 เดือน ไม่มีค่าใช้จ่าย"

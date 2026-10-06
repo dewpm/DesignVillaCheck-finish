@@ -1,18 +1,21 @@
 {
-  "framework": "vite",
+  "framework": "nextjs",
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
-  "outputDirectory": "dist",
   "functions": {
-    "api/index.js": {
-      "maxDuration": 60,
-      "includeFiles": "server/**/*.{mjs,sql}"
+    "pages/api/[...route].ts": {
+      "maxDuration": 60
     }
   },
-  "rewrites": [
-    { "source": "/api/:path*", "destination": "/api/index?route=:path*" }
-  ],
   "headers": [
-    { "source": "/api/:path*", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
+    {
+      "source": "/api/:path*",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
   ]
 }

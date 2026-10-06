@@ -1,0 +1,226 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../backend/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+  moduleFormat    = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model audits {
+  id        String @id
+  actor_id  String
+  action    String
+  target_id String
+  created   String
+  users     users  @relation(fields: [actor_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model documents {
+  id       String     @id
+  owner_id String
+  name     String
+  mime     String
+  bytes    Bytes
+  users    users      @relation(fields: [owner_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  invoices invoices[]
+  villas   villas[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model invoices {
+  id                                       String       @id
+  villa_id                                 String       @unique(map: "one_open_invoice", where: raw("(status <> 'paid'::text)"))
+  amount                                   Int
+  months                                   Int
+  status                                   String       @default("pending")
+  proof_id                                 String?
+  reference                                String       @default("")
+  reason                                   String       @default("")
+  created                                  String
+  paid_at                                  String?
+  confirmed_by                             String?
+  subscription_owner                       String?      @unique(map: "one_open_subscription_invoice", where: raw("((status <> 'paid'::text) AND (subscription_owner IS NOT NULL))"))
+  package_id                               String?
+  payment_status                           String       @default("WAITING_FOR_SLIP")
+  verification_mode                        String       @default("MANUAL")
+  currency                                 String       @default("THB")
+  external_transaction_id                  String?      @unique(map: "unique_payment_transaction", where: raw("(external_transaction_id IS NOT NULL)"))
+  external_provider                        String?
+  updated_at                               String?
+  users_invoices_confirmed_byTousers       users?       @relation("invoices_confirmed_byTousers", fields: [confirmed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  documents                                documents?   @relation(fields: [proof_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_invoices_subscription_ownerTousers users?       @relation("invoices_subscription_ownerTousers", fields: [subscription_owner], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  villas                                   villas       @relation(fields: [villa_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  mails                                    mails?
+  payment_qrs                              payment_qrs?
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model leads {
+  id      String  @id
+  user_id String? @unique
+  type    String
+  name    String
+  email   String
+  phone   String  @default("")
+  source  String
+  status  String  @default("NEW")
+  notes   String  @default("")
+  created String
+  updated String
+  users   users?  @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model mails {
+  id           String   @id
+  villa_id     String
+  invoice_id   String   @unique
+  recipient    String
+  subject      String
+  body         String
+  created      String
+  status       String   @default("queued")
+  attempts     Int      @default(0)
+  next_attempt BigInt   @default(0)
+  last_error   String   @default("")
+  sent_at      String?
+  invoices     invoices @relation(fields: [invoice_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  villas       villas   @relation(fields: [villa_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model oauth_identities {
+  provider String
+  subject  String
+  user_id  String
+  users    users  @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([provider, subject])
+  @@unique([provider, user_id])
+}
+
+model oauth_states {
+  state_hash String @id
+  provider   String
+  verifier   String
+  return_to  String
+  expires    BigInt
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model package_catalog {
+  id            String @id
+  name          String
+  slug          String @unique
+  description   String
+  amount        Int
+  currency      String @default("THB")
+  billing_cycle String @default("MONTHLY")
+  trial_months  Int    @default(0)
+  capacity      Int
+  features      String @default("[]")
+  max_level     String @default("VERIFIED")
+  banner        Int    @default(0)
+  active        Int    @default(1)
+  sort_order    Int    @default(0)
+  created       String
+  updated       String
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model payment_qrs {
+  id           String   @id
+  payment_id   String   @unique(map: "one_active_payment_qr", where: raw("(status = 'ACTIVE'::text)"))
+  payload      String
+  generated_at String
+  expires_at   String
+  status       String
+  created      String
+  updated      String
+  invoices     invoices @relation(fields: [payment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model rate_limits {
+  key     String @id
+  count   Int
+  expires BigInt
+}
+
+model sessions {
+  token_hash String @id
+  user_id    String
+  csrf       String
+  expires    BigInt
+  users      users  @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model subscriptions {
+  owner_id   String  @id
+  package_id String
+  expires    String?
+  payments   Int     @default(0)
+  created    String
+  lifecycle  String  @default("PENDING_RENEWAL")
+  users      users   @relation(fields: [owner_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model system_settings {
+  key   String @id
+  value String
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  id                                          String             @id
+  email                                       String             @unique
+  name                                        String
+  password_hash                               String
+  role                                        String
+  created                                     String             @default("")
+  last_login                                  String?
+  business_name                               String             @default("")
+  phone                                       String             @default("")
+  address                                     String             @default("")
+  audits                                      audits[]
+  documents                                   documents[]
+  invoices_invoices_confirmed_byTousers       invoices[]         @relation("invoices_confirmed_byTousers")
+  invoices_invoices_subscription_ownerTousers invoices?          @relation("invoices_subscription_ownerTousers")
+  leads                                       leads?
+  oauth_identities                            oauth_identities[]
+  sessions                                    sessions[]
+  subscriptions                               subscriptions?
+  villas                                      villas[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model villas {
+  id                 String    @id
+  owner_id           String
+  name               String
+  province           String
+  merchant           String
+  email              String
+  package_id         String
+  document_id        String
+  status             String    @default("pending")
+  reason             String    @default("")
+  qr                 String?   @unique
+  expires            String?
+  payments           Int       @default(0)
+  created            String
+  phone              String    @default("")
+  bank_name          String    @default("")
+  account_name       String    @default("")
+  account_number     String    @default("")
+  verification_level String    @default("VERIFIED")
+  reviewed_at        String?
+  reviewed_by        String?
+  photo_url          String    @default("")
+  invoices           invoices?
+  mails              mails[]
+  documents          documents @relation(fields: [document_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users              users     @relation(fields: [owner_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}

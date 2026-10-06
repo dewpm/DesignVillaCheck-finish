@@ -1,7 +1,7 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
-import { createVercelHandler } from "../api/index.js"
+import { createVercelHandler } from "./legacy-vercel.mjs"
 import { openTestDatabase } from "./test-database.mjs"
 
 async function serve(handler) {

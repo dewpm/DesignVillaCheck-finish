@@ -1,3 +1,4 @@
+import { seedCatalog } from "./catalog.mjs"
 import pg from "pg"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { readFileSync } from "node:fs"
@@ -70,10 +71,17 @@ export async function openPostgres(connectionString, options = {}) {
       await db.exec(
         readFileSync(new URL("./postgres-schema.sql", import.meta.url), "utf8"),
       )
+      await db.exec(
+        readFileSync(new URL("./business-schema.sql", import.meta.url), "utf8"),
+      )
       await db
         .prepare("UPDATE users SET created=? WHERE created=''")
         .run(new Date().toISOString())
     })
+    await db.exec(
+      "INSERT INTO leads(id,user_id,type,name,email,source,created,updated) SELECT id,id,UPPER(role),name,email,'REGISTRATION',created,created FROM users WHERE role IN ('user','merchant') ON CONFLICT(user_id) DO NOTHING",
+    )
+    await seedCatalog(db)
     return db
   } catch (error) {
     await pool.end()

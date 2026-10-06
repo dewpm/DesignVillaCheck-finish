@@ -1,10 +1,10 @@
 type Channel = "email" | "phone" | "facebook" | "instagram";
 export function openSupport(channel: Channel) {
   const values: Record<Channel, string | undefined> = {
-    email: import.meta.env.VITE_SUPPORT_EMAIL,
-    phone: import.meta.env.VITE_SUPPORT_PHONE,
-    facebook: import.meta.env.VITE_FACEBOOK_URL,
-    instagram: import.meta.env.VITE_INSTAGRAM_URL,
+    email: process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "villacheck69@gmail.com",
+    phone: process.env.NEXT_PUBLIC_SUPPORT_PHONE,
+    facebook: process.env.NEXT_PUBLIC_FACEBOOK_URL,
+    instagram: process.env.NEXT_PUBLIC_INSTAGRAM_URL,
   };
   const value = values[channel]?.trim();
   if (!value) { window.alert("ช่องทางติดต่อนี้ยังไม่เปิดใช้งานในเว็บสาธิต"); return; }

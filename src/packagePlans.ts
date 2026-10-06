@@ -1,10 +1,16 @@
-export const merchantPlans = [
-  { id: "basic", name: "Basic Trust QR", amount: 0, capacity: 1 },
-  { id: "starter", name: "Trust Starter", amount: 990, capacity: 1 },
-  { id: "pro", name: "Trust Pro", amount: 2900, capacity: 1 },
-  { id: "plus", name: "Trust Plus", amount: 4900, capacity: 2 },
-  { id: "premium", name: "Trust Premium", amount: 9900, capacity: 10 },
-];
+import { useEffect, useState } from "react";
+import { api } from "./api";
+export type PackagePlan = {
+ id: string; name: string; slug: string; amount: number; capacity: number; description: string;
+ currency: string; billingCycle: string; trialMonths: number; features: string[];
+ maximumVerificationLevel: string; showPremiumBanner: boolean; isActive: boolean; sort_order: number;
+};
 export const selectedPlanKey = "villacheck-selected-package";
 export const packageIntentKey = "villacheck-package-intent";
-export function planId(name: string) { return merchantPlans.find(plan => plan.name === name)?.id || "starter"; }
+export function planId(name: string) { return sessionStorage.getItem(selectedPlanKey) || name; }
+export function usePackages() {
+ const [plans,setPlans]=useState<PackagePlan[]>([]);
+ const [error,setError]=useState("");
+ useEffect(()=>{ let active=true; const refresh=()=>void api<{packages:PackagePlan[]}>("/packages").then(v=>{if(active){setPlans(v.packages);setError("");}}).catch(e=>{if(active)setError(e.message);}); refresh(); const timer=window.setInterval(refresh,10000);return()=>{active=false;clearInterval(timer);};},[]);
+ return {plans,error};
+}

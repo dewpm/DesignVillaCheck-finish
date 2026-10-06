@@ -1,3 +1,4 @@
+import PaymentQr from "./PaymentQr";
 import { planId } from "./packagePlans";
 import SubscriptionPanel from "./SubscriptionPanel";
 import { useEffect, useRef, useState } from "react"
@@ -40,7 +41,7 @@ export function VillaQr({ villa }: { villa: MerchantVilla }) {
   return (
     <div className="merchant-qr">
       <div ref={qrRef} />
-      <strong>{villa.qr}</strong>
+      <strong>{villa.qr}</strong><p>{villa.qrStatus} · {villa.verificationLevel}</p>{villa.premiumBanner && <strong>Premium Merchant</strong>}
       <small>หมดอายุ {date(villa.expires)}</small>
       <a href={url}>เปิดหน้าตรวจสอบ ↗</a>
     </div>
@@ -65,6 +66,7 @@ export default function Backoffice({
   const [renewalPlan, setRenewalPlan] = useState("starter");
   const [selected, setSelected] = useState("")
   const [message, setMessage] = useState("")
+  const [verificationLevel,setVerificationLevel]=useState("VERIFIED")
   const [reason, setReason] = useState("")
   const [search, setSearch] = useState("")
   const [filter, setFilter] = useState("all")
@@ -76,8 +78,8 @@ export default function Backoffice({
     province: "",
     merchant: "",
     email: "",
-    phone: "", bankName: "", accountName: "", accountNumber: "",
-    package: "Trust Starter · ฿990 / เดือน",
+    photoUrl: "", phone: "", bankName: "", accountName: "", accountNumber: "",
+    package: "",
   })
   useEffect(() => {
     setMessage("")
@@ -105,6 +107,11 @@ export default function Backoffice({
           return
         }
         const next = await api<Store>("/state")
+        const attempt=new URLSearchParams(window.location.search).get("paymentAttempt")
+        if(attempt && !admin) {
+          try { await api(`/payments/attempt?id=${encodeURIComponent(attempt)}`) }
+          catch(e) { if(!cancelled)setMessage(e instanceof Error ? e.message : "Payment QR ไม่พร้อมใช้งาน") }
+        }
         if (!cancelled && !busyRef.current) setStore(next)
       } catch (error) {
         if (!cancelled) {
@@ -193,7 +200,7 @@ export default function Backoffice({
         province: "",
         merchant: "",
         email: "",
-        phone: "", bankName: "", accountName: "", accountNumber: "",
+        photoUrl: "", phone: "", bankName: "", accountName: "", accountNumber: "",
         package: form.package,
       })
       go("owner-villas")
@@ -207,9 +214,9 @@ export default function Backoffice({
     if (
       await perform(
         `/villas/${v.id}/review`,
-        { status: next, reason },
+        { status: next, reason, verificationLevel },
         next === "approved"
-          ? "อนุมัติแล้ว สร้างใบแจ้งชำระและนำอีเมลเข้าคิวส่งอัตโนมัติ"
+          ? "อนุมัติเอกสารแล้ว เปิด Trial หรือสร้างใบแจ้งชำระตามแพ็กเกจ"
           : "บันทึกผลตรวจสอบแล้ว",
       )
     )
@@ -217,7 +224,7 @@ export default function Backoffice({
   }
   if (loading || !store)
     return (
-      <PortalShell role={admin ? "Admin" : "Owner"} page={page} go={go}>
+      <PortalShell role={admin ? "Admin" : "Merchant"} page={page} go={go}>
         <h1>{loading ? "กำลังเชื่อมต่อ Backend…" : "เชื่อมต่อ Backend ไม่สำเร็จ"}</h1>
         <p role="alert">{message}</p>
         <button
@@ -230,7 +237,7 @@ export default function Backoffice({
     )
   const active = store.villas.find((v) => v.id === selected)
   const adding = page === "owner-add-villa" || page === "owner-onboarding-villa"
-  const billing = page === "owner-package" || page === "admin-packages"
+  const billing = page === "owner-package" || page === "admin-payments"
   const reviewing = page === "admin-review"
   const dashboard = page.endsWith("dashboard")
   const list = store.villas.filter(
@@ -247,7 +254,7 @@ export default function Backoffice({
     go(admin ? "admin-review" : "owner-villa-detail")
   }
   return (
-    <PortalShell role={admin ? "Admin" : "Owner"} page={page} go={go}>
+    <PortalShell role={admin ? "Admin" : "Merchant"} page={page} go={go}>
       <div className="portal-head">
         <div>
           <span className="kicker">
@@ -339,6 +346,7 @@ export default function Backoffice({
               ["province", "จังหวัด"],
               ["merchant", "ชื่อ Merchant / บริษัท"],
               ["email", "อีเมลรับแจ้งชำระเงิน"],
+              ["photoUrl", "URL รูป Villa (HTTPS)"],
               ["phone", "เบอร์โทรทางการของ Villa"],
               ["bankName", "ธนาคารรับเงิน"],
               ["accountName", "ชื่อบัญชีรับเงิน"],
@@ -347,7 +355,7 @@ export default function Backoffice({
               <label key={key}>
                 <span>{label} *</span>
                 <input
-                  required
+                  required={key !== "photoUrl"}
                   type={key === "email" ? "email" : "text"}
                   value={form[key]}
                   onChange={(e) => setForm({ ...form, [key]: e.target.value })}
@@ -500,6 +508,7 @@ export default function Backoffice({
                     alt="เอกสารกรรมสิทธิ์ Villa"
                   />
                 )}
+                {admin && active.status === "pending" && <label>ระดับที่ Admin ตรวจจริง<select value={verificationLevel} onChange={e=>setVerificationLevel(e.target.value)}>{["REGISTERED","BASIC_CHECKED","VERIFIED","PREMIUM_VERIFIED"].map(x=><option key={x}>{x}</option>)}</select></label>}
                 {admin && active.status === "pending" && (
                   <div className="portal-form">
                     <label>
@@ -641,6 +650,11 @@ export function MerchantVerification({
   const [villa, setVilla] = useState<{
     name: string
     province: string
+    photoUrl: string
+    verificationLevel: string
+    premiumBanner: boolean
+    qrStatus: string
+    merchantName: string
     expires: string
     valid: boolean
     locked: boolean
@@ -656,7 +670,7 @@ export function MerchantVerification({
     setLoading(true)
     setVilla(null)
     setError("")
-    void api<{ name: string; province: string; expires: string; valid: boolean; locked: boolean; phone?: string; bankName?: string; accountName?: string; accountNumber?: string }>(
+    void api<{ photoUrl: string; verificationLevel: string; premiumBanner: boolean; qrStatus: string; merchantName: string; name: string; province: string; expires: string; valid: boolean; locked: boolean; phone?: string; bankName?: string; accountName?: string; accountNumber?: string }>(
       `/public/qr/${encodeURIComponent(reference)}`,
     )
       .then((value) => {
@@ -687,7 +701,9 @@ export function MerchantVerification({
                 ? "QR ใช้งานได้ · Admin อนุมัติแล้ว"
                 : "QR หมดอายุหรือไม่พร้อมใช้งาน"}
             </span>
-            <p>{villa.province}</p>
+            {villa.photoUrl && <img src={villa.photoUrl} alt={villa.name} style={{maxWidth:"100%",maxHeight:360}}/>}
+            <p>{villa.province} · {villa.merchantName} · {villa.verificationLevel} · {villa.qrStatus}</p>{villa.premiumBanner && <strong>Premium Merchant</strong>}
+            <a href={`https://www.google.com/maps/search/?${new URLSearchParams({api:"1",query:`${villa.name} ${villa.province}`})}`} target="_blank" rel="noopener noreferrer">ดูที่ตั้งบน Google Maps</a>
             <p>วันหมดอายุ: {date(villa.expires)}</p>
             <section className={`verification-contact ${villa.locked ? "locked" : ""}`}>
               <div className="verification-contact-head"><h2>ข้อมูลติดต่อและบัญชีรับเงิน</h2><span>{villa.locked ? "สำหรับสมาชิก User" : "เข้าสู่ระบบ User แล้ว"}</span></div>
@@ -732,6 +748,7 @@ function PaymentPanel({
 }) {
   const [file, setFile] = useState<Document | null>(null)
   const [reference, setReference] = useState("")
+  const [bankTransaction, setBankTransaction] = useState(invoice.reference)
   const [reason, setReason] = useState("")
   const [error, setError] = useState("")
   const [reading, setReading] = useState(false)
@@ -769,9 +786,11 @@ function PaymentPanel({
         {invoice.months} เดือน
       </strong>
       <small>{invoice.id}</small>
+      {!admin && invoice.status === "pending" && <PaymentQr paymentId={invoice.id} initial={invoice.paymentQr} />}
       <p>
         {invoice.status === "paid"
           ? `ยืนยันชำระแล้ว ${date(invoice.paidAt || "")}`
+          : invoice.paymentStatus === "REJECTED" ? "สลิปถูกปฏิเสธ กรุณาแนบใหม่"
           : invoice.status === "submitted"
             ? "แนบสลิปแล้ว รอ Admin ตรวจยืนยัน"
             : "รอชำระเงินและแนบสลิป"}
@@ -780,7 +799,7 @@ function PaymentPanel({
       {invoice.status === "pending" && !admin && (
         <div className="portal-form">
           <p className="payment-instructions">{instructions}</p>
-          {configured && (
+          {(
             <>
               <label>
                 <span>เลขอ้างอิงการโอน</span>
@@ -823,6 +842,7 @@ function PaymentPanel({
       {invoice.status === "submitted" && admin && (
         <div className="portal-form">
           <p>เลขอ้างอิง: {invoice.reference} · ตรวจยอดเข้าบัญชีก่อนยืนยัน</p>
+          <label><span>เลขธุรกรรมธนาคารที่ตรวจสอบแล้ว</span><input value={bankTransaction} onChange={e => setBankTransaction(e.target.value)} /></label>
           <label>
             <span>เหตุผลหากไม่ผ่าน</span>
             <input value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -834,7 +854,7 @@ function PaymentPanel({
               onClick={() =>
                 void perform(
                   `/invoices/${invoice.id}/confirm`,
-                  {},
+                  { externalTransactionId: bankTransaction },
                   "ยืนยันการชำระแล้ว เปิดใช้ / ต่ออายุ QR เรียบร้อย",
                 )
               }

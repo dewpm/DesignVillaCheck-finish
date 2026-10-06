@@ -1,5 +1,7 @@
-import { selectedPlanKey, packageIntentKey } from "./packagePlans";
-import { currentAccount } from "./api";
+import MerchantProfile from "./MerchantProfile";
+import AdminBusiness from "./AdminBusiness";
+import { usePackages, selectedPlanKey, packageIntentKey } from "./packagePlans";
+import { api, currentAccount } from "./api";
 import VillaMap from "./VillaMap";
 import ProvinceExplorer, { popularProvinces } from "./ProvinceExplorer";
 import { UserRegistration, AdminUsers, MemberDashboard } from "./UserAccounts";
@@ -154,7 +156,7 @@ function ShowcaseCard({ villa, featured = false, onClick }: { villa: typeof vill
   return <article className={`showcase-card ${featured ? "featured" : ""}`} onClick={onClick}>
     <img src={villa.image} alt={`ภาพ ${villa.name}`} />
     <div className="showcase-overlay" />
-    <div className="showcase-status"><Icon name={villa.status === "ตรวจสอบข้อมูลแล้ว" ? "shield" : "clock"} size={14} />{villa.status === "ตรวจสอบข้อมูลแล้ว" ? "VillaCheck VERIFIED" : "Pending Review"}</div>
+    <div className="showcase-status"><Icon name={villa.status === "ตรวจสอบข้อมูลแล้ว" ? "shield" : "clock"} size={14} />{villa.status === "ตรวจสอบข้อมูลแล้ว" ? "VillaCheck VERIFIED" : villa.status}</div>
     <div className="showcase-copy"><span><Icon name="pin" size={14} />{villa.province}</span><h3>{villa.name}</h3><div><small>Last checked</small><strong>{villa.updated}</strong><button aria-label={`ดู Trust Profile ของ ${villa.name}`} onClick={event => { event.stopPropagation(); onClick(); }}><Icon name="arrow" size={18} /></button></div></div>
   </article>;
 }
@@ -162,7 +164,8 @@ function ShowcaseCard({ villa, featured = false, onClick }: { villa: typeof vill
 function VillaShowcase({ go }: { go: (p: Page, item?: string) => void }) {
   const [active, setActive] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
-  const items = villas.slice(0, 4);
+  const [items,setItems]=useState<(typeof villas[number] & {qr:string;premiumBanner:boolean})[]>([]);
+  useEffect(()=>{let active=true;void api<{villas:{name:string;province:string;qr:string;qrStatus:string;photoUrl:string;updated:string;premiumBanner:boolean}[]}>("/public/villas").then(data=>{if(active)setItems(data.villas.slice(0,4).map(v=>({...v,guests:"ไม่ระบุ",status:v.qrStatus === "ACTIVE" ? "ตรวจสอบข้อมูลแล้ว" : "หมดอายุ",image:v.photoUrl || "/villa-placeholder.svg"})));}).catch(()=>{});return()=>{active=false;};},[]);
   const scrollToSlide = (index: number) => {
     const next = Math.max(0, Math.min(items.length - 1, index));
     const element = trackRef.current?.children[next] as HTMLElement | undefined;
@@ -176,8 +179,9 @@ function VillaShowcase({ go }: { go: (p: Page, item?: string) => void }) {
     const nearest = children.reduce((best, child, index) => Math.abs(child.offsetLeft - track.scrollLeft) < Math.abs(children[best].offsetLeft - track.scrollLeft) ? index : best, 0);
     setActive(nearest);
   };
+  if(!items.length)return <p>ยังไม่มี Villa ที่ผ่านการตรวจสอบ</p>;
   return <div className="showcase-carousel">
-    <div className="showcase-track" ref={trackRef} onScroll={updateActive}>{items.map((villa, index) => <ShowcaseCard key={villa.name} villa={villa} featured={index === 0} onClick={() => go("detail", villa.name)} />)}</div>
+    <div className="showcase-track" ref={trackRef} onScroll={updateActive}>{items.map((villa, index) => <ShowcaseCard key={villa.name} villa={villa} featured={index === 0} onClick={() => go("verify", villa.qr)} />)}</div>
     <div className="carousel-controls"><button aria-label="Villa ก่อนหน้า" onClick={() => scrollToSlide(active - 1)} disabled={active === 0}>←</button><div className="carousel-dots">{items.map((villa, index) => <button key={villa.name} aria-label={`ไป Villa ภาพที่ ${index + 1}`} className={active === index ? "active" : ""} onClick={() => scrollToSlide(index)} />)}</div><span>{active + 1}/{items.length}</span><button aria-label="Villa ถัดไป" onClick={() => scrollToSlide(active + 1)} disabled={active === items.length - 1}>→</button></div>
   </div>;
 }
@@ -272,7 +276,7 @@ function Home({ go, onSearch }: { go: (p: Page, item?: string) => void; onSearch
 
     <section className="section owner-section">
       <div className="container owner-grid">
-        <div><span className="kicker">FOR VILLA OWNERS</span><h2>สร้างความน่าเชื่อถือ<br />ให้ที่พักของคุณ</h2><p>เปลี่ยนความมั่นใจให้เป็นโอกาสทางธุรกิจ ด้วย Trust Profile, QR Verification และข้อมูลเชิงลึกที่ช่วยให้ลูกค้าตัดสินใจง่ายขึ้น</p><button className="primary-button" onClick={() => go("pricing")}>ดูแพ็กเกจทั้งหมด <Icon name="arrow" size={18} /></button></div>
+        <div><span className="kicker">FOR VILLA MERCHANTS</span><h2>สร้างความน่าเชื่อถือ<br />ให้ที่พักของคุณ</h2><p>เปลี่ยนความมั่นใจให้เป็นโอกาสทางธุรกิจ ด้วย Trust Profile, QR Verification และข้อมูลเชิงลึกที่ช่วยให้ลูกค้าตัดสินใจง่ายขึ้น</p><button className="primary-button" onClick={() => go("pricing")}>ดูแพ็กเกจทั้งหมด <Icon name="arrow" size={18} /></button></div>
         <div className="feature-stack">
           <div><span><Icon name="shield" /></span><p><strong>Trust Profile</strong>โปรไฟล์ที่พักพร้อมสถานะตรวจสอบ</p></div>
           <div><span><Icon name="qr" /></span><p><strong>QR Verification</strong>QR เฉพาะสำหรับแชร์ให้ลูกค้าตรวจสอบ</p></div>
@@ -284,7 +288,7 @@ function Home({ go, onSearch }: { go: (p: Page, item?: string) => void; onSearch
     <section className="section pricing-preview">
       <div className="container pricing-banner premium-pricing">
         <div className="pricing-number">05</div>
-        <div><span className="kicker">TRUST INFRASTRUCTURE FOR OWNERS</span><h2>ทำให้ความน่าเชื่อถือ<br />มองเห็นและตรวจสอบได้</h2><p>เริ่มต้น Basic Trust QR ฟรี 3 เดือน พร้อม Trust Profile และ QR Verification</p></div>
+        <div><span className="kicker">TRUST INFRASTRUCTURE FOR MERCHANTS</span><h2>ทำให้ความน่าเชื่อถือ<br />มองเห็นและตรวจสอบได้</h2><p>เริ่มต้น Basic Trust QR ฟรี 3 เดือน พร้อม Trust Profile และ QR Verification</p></div>
         <div><small>START FROM</small><strong>ฟรี</strong><span>3 เดือน · ไม่มีค่าใช้จ่าย</span><button className="sun-button" onClick={() => go("pricing")}>สำรวจทุกแพ็กเกจ</button></div>
       </div>
     </section>
@@ -297,7 +301,10 @@ function Directory({ go, initialQuery = "", initialProvince = "" }: { go: (p: Pa
   const [status, setStatus] = useState("");
   const [guests, setGuests] = useState("");
   const [sort, setSort] = useState("ล่าสุด");
-  const filtered = [...villas]
+  const [liveVillas,setLiveVillas]=useState<(typeof villas[number] & {qr:string;premiumBanner:boolean})[]>([]);
+  const [directoryError,setDirectoryError]=useState("");
+  useEffect(()=>{let active=true;void api<{villas:{name:string;province:string;qr:string;qrStatus:string;photoUrl:string;updated:string;premiumBanner:boolean}[]}>("/public/villas").then(data=>{if(active)setLiveVillas(data.villas.map(v=>({...v,guests:"ไม่ระบุ",status:v.qrStatus === "ACTIVE" ? "ตรวจสอบข้อมูลแล้ว" : "หมดอายุ",image:v.photoUrl || "/villa-placeholder.svg"})));}).catch(e=>{if(active)setDirectoryError(e.message);});return()=>{active=false;};},[]);
+  const filtered = [...liveVillas]
     .filter(v => v.name.toLowerCase().includes(query.toLowerCase()))
     .filter(v => !province || v.province === province)
     .filter(v => !status || v.status === status)
@@ -313,8 +320,8 @@ function Directory({ go, initialQuery = "", initialProvince = "" }: { go: (p: Pa
       <button className="primary-button" onClick={() => window.scrollTo({ top: 300, behavior: "smooth" })}><Icon name="search" size={18} />ค้นหา</button>
     </div>
     <section className="container directory-results">
-      <div className="results-head"><div><h2>ตัวอย่างพูลวิลล่า</h2><p>แสดง {filtered.length} รายการจากข้อมูลสาธิต</p></div><select aria-label="เรียงลำดับ" value={sort} onChange={event => setSort(event.target.value)}><option value="ล่าสุด">อัปเดตล่าสุด</option><option>A–Z</option></select></div>
-      {filtered.length ? <div className="villa-grid directory-grid">{filtered.map(v => <VillaCard key={v.name} villa={v} onClick={() => go("detail", v.name)} />)}</div> : <div className="empty-results"><strong>ไม่พบ Villa ที่ตรงกับการค้นหา</strong><p>ลองเปลี่ยนคำค้นหาหรือจังหวัด</p><button className="outline-button" onClick={() => { setQuery(""); setProvince(""); setStatus(""); setGuests(""); }}>ล้างตัวกรอง</button></div>}
+      <div className="results-head"><div><h2>Villa ที่ผ่านการตรวจสอบ</h2><p>แสดง {filtered.length} รายการ</p>{directoryError&&<p role="alert">{directoryError}</p>}</div><select aria-label="เรียงลำดับ" value={sort} onChange={event => setSort(event.target.value)}><option value="ล่าสุด">อัปเดตล่าสุด</option><option>A–Z</option></select></div>
+      {filtered.length ? <div className="villa-grid directory-grid">{filtered.map(v => <div key={v.qr}>{v.premiumBanner&&<strong>Premium Merchant</strong>}<VillaCard villa={v} onClick={() => go("verify", v.qr)} /></div>)}</div> : <div className="empty-results"><strong>ไม่พบ Villa ที่ตรงกับการค้นหา</strong><p>ลองเปลี่ยนคำค้นหาหรือจังหวัด</p><button className="outline-button" onClick={() => { setQuery(""); setProvince(""); setStatus(""); setGuests(""); }}>ล้างตัวกรอง</button></div>}
     </section>
   </main>;
 }
@@ -411,8 +418,6 @@ function Detail({ go, villa }: { go: (p: Page, item?: string) => void; villa: ty
 
 function ScanQr({ go, onVerified }: { go: (p: Page, item?: string) => void; onVerified: (reference: string) => void }) {
   const [scanState, setScanState] = useState<"idle" | "requesting" | "scanning" | "loading" | "success" | "permission-error" | "not-found" | "error">("idle");
-  const [manualEntry, setManualEntry] = useState(false);
-  const [manualCode, setManualCode] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [scannedReference, setScannedReference] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -498,17 +503,6 @@ function ScanQr({ go, onVerified }: { go: (p: Page, item?: string) => void; onVe
     }
   };
 
-  const submitManualCode = () => {
-    const value = manualCode.trim();
-    if (!value) {
-      setErrorMessage("กรุณากรอกรหัส QR Reference");
-      setScanState("error");
-      return;
-    }
-    setScanState("loading");
-    window.setTimeout(() => completeScan(value), 450);
-  };
-
   const simulateScan = () => {
     stopCamera();
     setScanState("loading");
@@ -546,9 +540,7 @@ function ScanQr({ go, onVerified }: { go: (p: Page, item?: string) => void; onVe
         <div className="scanner-actions">
           <button className="primary-button" onClick={startCamera} disabled={busy}><Icon name="camera" size={18} />{cameraActive ? "กำลังเปิดกล้อง" : "เปิดกล้อง"}</button>
           <label className="outline-button upload-button"><Icon name="upload" size={18} />อัปโหลดรูป QR<input type="file" accept="image/*" onChange={uploadQr} disabled={busy} /></label>
-          <button className="outline-button" onClick={() => setManualEntry(value => !value)} disabled={busy}><Icon name="qr" size={18} />กรอกรหัส QR แทน</button>
         </div>
-        {manualEntry && <div className="manual-code"><label><span>QR Reference</span><input value={manualCode} onChange={event => setManualCode(event.target.value)} placeholder="เช่น VC-TH-2025-01842" /></label><button className="primary-button" onClick={submitManualCode} disabled={busy}>ตรวจสอบรหัส</button></div>}
         <div className="prototype-scan">
           <span>สำหรับ Prototype</span>
           <button className="sun-button" onClick={simulateScan} disabled={busy}>{scanState === "loading" ? "กำลังสแกน..." : scanState === "success" ? "สแกนสำเร็จ" : "จำลองการสแกน QR"}</button>
@@ -595,26 +587,20 @@ function Verify({ go, reference }: { go: (p: Page, item?: string) => void; refer
   </main>;
 }
 
-const plans = [
-  { name: "Basic Trust QR", price: "ฟรี", unit: "3 เดือน", desc: "เริ่มต้นสร้างความน่าเชื่อถือ", features: ["Trust Profile พื้นฐาน", "QR Verification", "Verified Badge", "อัปเดตข้อมูล 1 ครั้ง"], cta: "เลือกแพ็กเกจ" },
-  { name: "Trust Starter", price: "฿990", unit: "/ เดือน", desc: "เหมาะสำหรับที่พักเริ่มต้น", features: ["ทุกอย่างใน Basic", "อัปเดตข้อมูลรายเดือน", "สถิติการเข้าชมพื้นฐาน", "QR ดาวน์โหลดคุณภาพสูง"], cta: "เลือกแพ็กเกจ" },
-  { name: "Trust Pro", price: "฿2,900", unit: "/ เดือน", desc: "เพิ่มความมั่นใจให้ลูกค้า", features: ["ทุกอย่างใน Starter", "ระดับ Pro Verification", "Analytics แบบละเอียด", "แสดงผลเด่นใน Directory", "QR แยกสำหรับแต่ละ Villa"], cta: "เลือกแพ็กเกจ", recommended: true },
-  { name: "Trust Plus", price: "฿4,900", unit: "/ เดือน", desc: "สำหรับธุรกิจที่กำลังเติบโต", features: ["ทุกอย่างใน Pro", "รองรับที่พัก 2 แห่ง", "รายงานประจำเดือน", "Priority Support", "Trust Score Insights"], cta: "เลือกแพ็กเกจ" },
-  { name: "Trust Premium", price: "฿9,900", unit: "/ เดือน", desc: "สำหรับเครือที่พักมืออาชีพ", features: ["รองรับสูงสุด 10 แห่ง", "Premium Verification", "Portfolio Dashboard", "Dedicated Account Manager", "Custom Trust Report"], cta: "เลือกแพ็กเกจ" },
-];
-
 function Pricing({ onSelect, go }: { onSelect: (name: string) => void; go: (page: Page) => void }) {
+  const {plans,error} = usePackages();
   return <main className="page-bg pricing-page">
-    <div className="page-hero container"><span className="kicker">PRICING FOR MERCHANTS</span><h1>แพ็กเกจที่เติบโตไปพร้อมธุรกิจคุณ</h1><p>สมัครแพ็กเกจที่บัญชี Merchant แล้วเพิ่ม Villa ตามจำนวนสิทธิ์<br />1 Villa = 1 QR · Basic ทดลองฟรี 3 เดือน</p></div>
+    <div className="page-hero container"><span className="kicker">PRICING FOR MERCHANTS</span><h1>แพ็กเกจที่เติบโตไปพร้อมธุรกิจคุณ</h1><p>สมัครแพ็กเกจที่บัญชี Merchant แล้วเพิ่ม Villa ตามจำนวนสิทธิ์<br />1 Villa = 1 QR · ตรวจเอกสารโดย Admin ก่อนเปิดใช้งาน</p></div>
+    {error && <p role="alert" className="container">{error}</p>}
     <div className="container plan-grid">
-      {plans.map(plan => <article className={`plan-card ${plan.recommended ? "recommended" : ""}`} key={plan.name}>
-        {plan.recommended && <div className="recommended-label">แนะนำสำหรับคุณ</div>}
-        <div className="plan-head"><h2>{plan.name}</h2><p>{plan.desc}</p><div><strong>{plan.price}</strong><span>{plan.unit}</span></div></div>
+      {plans.map(plan => <article className={`plan-card ${plan.showPremiumBanner ? "recommended" : ""}`} key={plan.name}>
+        {plan.showPremiumBanner && <div className="recommended-label">แนะนำสำหรับคุณ</div>}
+        <div className="plan-head"><h2>{plan.name}</h2><p>{plan.description}</p><div><strong>{plan.amount ? `฿${(plan.amount / 100).toLocaleString("th-TH")}` : "ฟรี"}</strong><span>{plan.amount ? "/ เดือน" : `${plan.trialMonths} เดือน`}</span></div></div>
         <hr /><ul>{plan.features.map(f => <li key={f}><span><Icon name="check" size={14} /></span>{f}</li>)}</ul>
-        <button className={plan.recommended ? "primary-button full" : "outline-button full"} onClick={() => onSelect(plan.name)}>{plan.cta}</button>
+        <button className={plan.showPremiumBanner ? "primary-button full" : "outline-button full"} onClick={() => onSelect(plan.id)}>เลือกแพ็กเกจ</button>
       </article>)}
     </div>
-    <div className="container no-payment"><Icon name="info" /><p><strong>VillaCheck ยังไม่มีระบบชำระเงินออนไลน์</strong><br />หลังเลือกแพ็กเกจ ทีมงานจะติดต่อกลับเพื่อยืนยันข้อมูลและแนะนำขั้นตอนการสมัคร</p></div>
+    <div className="container no-payment"><Icon name="info" /><p><strong>ชำระค่าบริการแพ็กเกจหลังเอกสารผ่านการอนุมัติ</strong><br />ระบบส่งอีเมลแจ้งยอดและลิงก์ชำระเงิน จากนั้น Merchant แนบสลิปให้ Admin ตรวจสอบ</p></div>
     <section className="container compare-strip"><div><span className="kicker light-kicker">TRUST FIRST</span><h2>ไม่แน่ใจว่าแพ็กเกจไหนเหมาะกับคุณ?</h2><p>ทีมงานของเราพร้อมช่วยประเมินและแนะนำแพ็กเกจที่เหมาะกับธุรกิจ</p></div><button className="white-button" onClick={() => go("contact")}><Icon name="phone" size={18} />นัดคุยกับทีมงาน</button></section>
   </main>;
 }
@@ -688,11 +674,13 @@ export default function App() {
     page === "villa-report" ? <PublicReportPage onSubmit={submitReport} /> :
     page === "villa-report-success" ? <PublicReportSuccess go={go} reference={reportReference} linkedToUser={userLoggedIn} /> :
     page === "user-registration" ? <UserRegistration go={go} reference={selectedItem} /> :
+    ["admin-packages","admin-leads","admin-settings","admin-subscriptions"].includes(page) ? <AdminBusiness page={page} go={go} /> :
     page === "admin-users" ? <AdminUsers go={go} /> :
     page === "user-dashboard" ? <MemberDashboard go={go} /> :
-    page === "login" ? <LoginPage reference={selectedItem} go={go} onAuthenticated={role => { if (role === "Owner") setOwnerLoggedIn(true); if (role === "User") setUserLoggedIn(true); }} /> :
+    page === "login" ? <LoginPage reference={selectedItem} go={go} onAuthenticated={role => { if (role === "Merchant") setOwnerLoggedIn(true); if (role === "User") setUserLoggedIn(true); }} /> :
     page === "owner-auth" ? <OwnerPackageAuth go={go} packageName={selectedPackage} onOwnerLogin={() => setOwnerLoggedIn(true)} /> :
-    page === "owner-registration" || page === "owner-information" ? <OwnerRegistration go={go} packageName={selectedPackage} /> :
+    page === "owner-information" || page === "owner-profile" ? <MerchantProfile page={page} go={go} /> :
+    page === "owner-registration" ? <OwnerRegistration go={go} packageName={selectedPackage} /> :
     page === "owner-onboarding-villa" ? <Backoffice page={page} go={go} initialPackage={selectedPackage} /> :
     page === "owner-select-villa" ? <Backoffice page="owner-villas" go={go} /> :
     page === "package-confirmation" ? <Backoffice page="owner-package" go={go} /> :

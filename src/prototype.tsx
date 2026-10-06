@@ -1,4 +1,5 @@
-import { packageIntentKey } from "./packagePlans";
+import ContactLead from "./ContactLead";
+import { usePackages, packageIntentKey } from "./packagePlans";
 import { SocialLogin } from "./UserAccounts";
 import { api, authenticate, logout, ApiError } from "./api";
 import { openSupport } from "./support";
@@ -12,13 +13,13 @@ export type Page =
   | "social-line" | "gallery"
   | "owner-auth" | "owner-registration" | "owner-information" | "owner-onboarding-villa"
   | "package-confirmation" | "owner-select-villa" | "package-request-pending"
-  | "owner-dashboard" | "owner-villas"
+  | "owner-profile" | "owner-dashboard" | "owner-villas"
   | "owner-villa-detail" | "owner-villa-edit" | "owner-add-villa" | "owner-preview"
   | "owner-pending" | "owner-analytics" | "owner-reports" | "owner-package"
   | "user-dashboard" | "user-checks" | "user-check-detail" | "user-reports"
   | "user-report-detail" | "user-precheck" | "user-check-success" | "villa-report" | "villa-report-success"
   | "admin-dashboard" | "admin-review" | "admin-owners" | "admin-villas"
-  | "admin-checks" | "admin-reports" | "admin-qr" | "admin-packages";
+  | "admin-leads" | "admin-settings" | "admin-payments" | "admin-subscriptions" | "admin-checks" | "admin-reports" | "admin-qr" | "admin-packages";
 
 type Go = (page: Page, item?: string) => void;
 type Status = "Pending" | "Verified" | "Rejected" | "Suspended" | "Expired";
@@ -44,7 +45,7 @@ export function PublicInfoPage({ page, go, selectedArticle }: { page: Page; go: 
   if (page === "articles") return <main className="page-bg public-info-page"><div className="page-hero container"><span className="kicker">TRAVEL INTELLIGENCE</span><h1>บทความและข่าวสาร</h1><p>ข้อมูลที่ช่วยให้ตรวจสอบที่พักและตัดสินใจก่อนโอนได้ชัดเจนขึ้น</p></div><div className="container info-article-list">{["เช็ก 5 จุดก่อนโอนค่าที่พัก","QR Verification ช่วยตรวจสอบอะไรบ้าง","วิธีสังเกตช่องทางติดต่อทางการ"].map((title, index) => <article key={title}><span>GUIDE 0{index + 1}</span><h2>{title}</h2><p>คำแนะนำจาก VillaCheck สำหรับการตรวจสอบข้อมูลที่พักใน Prototype</p><button className="text-button" onClick={() => go("article-detail", title)}>อ่านบทความ →</button></article>)}</div></main>;
   if (page === "article-detail") return <main className="page-bg public-info-page"><div className="page-hero container"><span className="kicker">VILLACHECK GUIDE</span><h1>{selectedArticle || "เช็ก 5 จุดก่อนโอนค่าที่พัก"}</h1><p>ตรวจสอบตัวตน ช่องทางติดต่อ บัญชีรับเงิน สถานะ และ QR Reference</p></div><article className="container info-body"><p>{articleBodies[selectedArticle || "เช็ก 5 จุดก่อนโอนค่าที่พัก"] || articleBodies["เช็ก 5 จุดก่อนโอนค่าที่พัก"]}</p><button className="outline-button" onClick={() => go("articles")}>กลับไปบทความทั้งหมด</button></article></main>;
   const info = publicInfo[page] ?? publicInfo.about!;
-  return <main className="page-bg public-info-page"><div className="page-hero container"><span className="kicker">{info.kicker}</span><h1>{info.title}</h1><p>{info.description}</p></div><div className="container info-body"><p>{info.body}</p><div className="button-row"><button className="primary-button" onClick={() => page === "owner-guide" ? go("pricing") : page === "help" ? go("contact") : go("home")}>{page === "owner-guide" ? "ดูแพ็กเกจ" : page === "help" ? "ติดต่อทีมงาน" : "กลับหน้าหลัก"}</button>{page === "contact" && <button className="outline-button" onClick={() => openSupport("email")}>ส่งอีเมล</button>}</div></div></main>;
+  return <main className="page-bg public-info-page"><div className="page-hero container"><span className="kicker">{info.kicker}</span><h1>{info.title}</h1><p>{info.description}</p></div><div className="container info-body"><p>{info.body}</p><div className="button-row"><button className="primary-button" onClick={() => page === "owner-guide" ? go("pricing") : page === "help" ? go("contact") : go("home")}>{page === "owner-guide" ? "ดูแพ็กเกจ" : page === "help" ? "ติดต่อทีมงาน" : "กลับหน้าหลัก"}</button>{page === "contact" && <ContactLead />}{page === "contact" && <button className="outline-button" onClick={() => openSupport("email")}>ส่งอีเมล</button>}</div></div></main>;
 }
 
 export function PublicReportPage({ onSubmit }: { onSubmit: (report: Omit<UserReport, "reference" | "guest">) => void }) {
@@ -83,11 +84,11 @@ export function PublicReportSuccess({ go, reference, linkedToUser }: { go: Go; r
 
 const testAccounts = [
   { role: "User", email: "user@villacheck.test", password: "User1234" },
-  { role: "Owner", email: "owner@villacheck.test", password: "Owner1234" },
+  { role: "Merchant", email: "owner@villacheck.test", password: "Owner1234" },
   { role: "Admin", email: "admin@villacheck.test", password: "Admin1234" },
 ];
 
-export function LoginPage({ go, onAuthenticated, reference = "" }: { go: Go; reference?: string; onAuthenticated?: (role: "User" | "Owner" | "Admin") => void }) {
+export function LoginPage({ go, onAuthenticated, reference = "" }: { go: Go; reference?: string; onAuthenticated?: (role: "User" | "Merchant" | "Admin") => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -102,9 +103,9 @@ export function LoginPage({ go, onAuthenticated, reference = "" }: { go: Go; ref
     setError(""); setLoading(true);
     try {
       const account = await authenticate(email, password);
-      const role = account.role === "merchant" ? "Owner" : account.role === "admin" ? "Admin" : "User";
+      const role = account.role === "merchant" ? "Merchant" : account.role === "admin" ? "Admin" : "User";
       onAuthenticated?.(role);
-      go(role === "Owner" ? sessionStorage.getItem(packageIntentKey) ? "owner-add-villa" : "owner-dashboard" : role === "Admin" ? "admin-dashboard" : reference ? "verify" : "user-dashboard", role === "User" ? reference : undefined);
+      go(role === "Merchant" ? sessionStorage.getItem(packageIntentKey) ? "owner-information" : "owner-dashboard" : role === "Admin" ? "admin-dashboard" : reference ? "verify" : "user-dashboard", role === "User" ? reference : undefined);
     } catch (error) { setError(error instanceof Error ? error.message : "เข้าสู่ระบบไม่สำเร็จ"); }
     finally { setLoading(false); }
   };
@@ -126,21 +127,13 @@ export function LoginPage({ go, onAuthenticated, reference = "" }: { go: Go; ref
       <button className="text-button" onClick={() => go("owner-registration")}>สมัครบัญชี Merchant</button>
       {localAccounts && <div className="test-accounts">
         <strong>บัญชีทดสอบบนเซิร์ฟเวอร์ Local</strong>
-        {testAccounts.map(account => <button key={account.role === "Owner" ? "Merchant" : account.role} onClick={() => { setEmail(account.email); setPassword(account.password); setError(""); }}>
-          <span>{account.role === "Owner" ? "Merchant" : account.role}</span><small>{account.email}<br />{account.password}</small>
+        {testAccounts.map(account => <button key={account.role === "Merchant" ? "Merchant" : account.role} onClick={() => { setEmail(account.email); setPassword(account.password); setError(""); }}>
+          <span>{account.role === "Merchant" ? "Merchant" : account.role}</span><small>{account.email}<br />{account.password}</small>
         </button>)}
       </div>}
     </div>
   </main>;
 }
-
-export const packageCatalog: Record<string, { price: string; features: string[] }> = {
-  "Basic Trust QR": { price: "ฟรี 90 วัน", features: ["Trust Profile พื้นฐาน", "QR Verification", "Verified Badge", "อัปเดตข้อมูล 1 ครั้ง"] },
-  "Trust Starter": { price: "฿990 / เดือน", features: ["ทุกอย่างใน Basic", "อัปเดตข้อมูลรายเดือน", "สถิติการเข้าชมพื้นฐาน", "QR ดาวน์โหลดคุณภาพสูง"] },
-  "Trust Pro": { price: "฿2,900 / เดือน", features: ["ทุกอย่างใน Trust Starter", "Pro Verification", "Analytics แบบละเอียด", "แสดงผลเด่นใน Directory"] },
-  "Trust Plus": { price: "฿4,900 / เดือน", features: ["ทุกอย่างใน Trust Pro", "รองรับที่พัก 2 แห่ง", "รายงานประจำเดือน", "Priority Support"] },
-  "Trust Premium": { price: "฿9,900 / เดือน", features: ["รองรับสูงสุด 10 แห่ง", "Premium Verification", "Portfolio Dashboard", "Dedicated Account Manager"] },
-};
 
 export function OwnerPackageAuth({ go, packageName }: { go: Go; packageName: string; onOwnerLogin: () => void }) {
   return <FlowPage kicker="MERCHANT REGISTER / LOGIN" title="เริ่มต้นใช้งานแพ็กเกจ" subtitle={`แพ็กเกจที่เลือก: ${packageName}`} onBack={() => go("pricing")}><div className="auth-choice"><button className="primary-button" onClick={() => go("owner-registration")}>สมัคร Merchant ใหม่</button><button className="outline-button" onClick={() => go("login")}>เข้าสู่ระบบ Merchant</button></div></FlowPage>;
@@ -155,7 +148,7 @@ export function OwnerRegistration({ go, packageName }: { go: Go; packageName: st
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); if (busy) return;
     setBusy(true); setError("");
-    try { await authenticate(email, password, name); go("owner-add-villa"); }
+    try { await authenticate(email, password, name); go("owner-information"); }
     catch (error) { setError(error instanceof Error ? error.message : "สมัครไม่สำเร็จ"); }
     finally { setBusy(false); }
   };
@@ -171,10 +164,12 @@ export function OwnerOnboardingVilla({ go, onVillaAdded }: { go: Go; onVillaAdde
 }
 
 export function PackageConfirmation({ go, packageName, villaName, onConfirm }: { go: Go; packageName: string; villaName: string; onConfirm: () => void }) {
-  const selectedPackage = packageCatalog[packageName];
+  const {plans} = usePackages();
+  const selectedPackage = plans.find(p=>p.id === packageName || p.name === packageName);
+  if(!selectedPackage)return <FlowPage kicker="PACKAGE" title="กำลังโหลดแพ็กเกจ" subtitle="" onBack={()=>go("pricing")}><p>กรุณาเลือกแพ็กเกจที่เปิดใช้งาน</p></FlowPage>;
   return <FlowPage kicker="PACKAGE CONFIRMATION" title="ยืนยันแพ็กเกจ" subtitle="ตรวจสอบรายละเอียดก่อนส่งคำขอ · ยังไม่มี Payment System" onBack={() => go("pricing")}>
     <div className="confirmation-box package-confirmation">
-      <div><span>Package ที่เลือก</span><strong>{packageName}</strong><b>{selectedPackage.price}</b></div>
+      <div><span>Package ที่เลือก</span><strong>{packageName}</strong><b>{selectedPackage.amount / 100} THB</b></div>
       <div><span>Villa ที่เลือก</span><strong>{villaName || "ยังไม่ได้เลือก Villa"}</strong><button className="text-button" onClick={() => go("owner-select-villa")}>{villaName ? "เปลี่ยน Villa" : "Select Villa"} →</button></div>
       <div><span>Features</span><ul>{selectedPackage.features.map(feature => <li key={feature}>✓ {feature}</li>)}</ul></div>
       <p>ไม่มีการเรียกเก็บเงินใน Prototype ทีมงานจะตรวจสอบและติดต่อกลับหลังอนุมัติคำขอ</p>
@@ -205,19 +200,19 @@ function FlowPage({ kicker, title, subtitle, onBack, children }: { kicker: strin
 
 const ownerNav: [string, Page][] = [
   ["Dashboard", "owner-dashboard"], ["Villas", "owner-villas"], ["Add Villa", "owner-add-villa"],
-  ["QR และการต่ออายุ", "owner-villa-detail"], ["Analytics", "owner-analytics"], ["Reports", "owner-reports"], ["Package", "owner-package"],
+  ["QR และการต่ออายุ", "owner-villa-detail"], ["Analytics", "owner-analytics"], ["Reports", "owner-reports"], ["Package", "owner-package"], ["Documents", "owner-pending"], ["Payment", "owner-package"], ["Profile", "owner-profile"],
 ];
 const adminNav: [string, Page][] = [
   ["Dashboard", "admin-dashboard"], ["Users", "admin-users"], ["Merchants", "admin-owners"], ["Villas", "admin-villas"],
-  ["Checks", "admin-checks"], ["Reports", "admin-reports"], ["QR", "admin-qr"], ["Packages", "admin-packages"],
+  ["Checks", "admin-checks"], ["Reports", "admin-reports"], ["QR", "admin-qr"], ["Packages", "admin-packages"], ["Documents", "admin-review"], ["Payments", "admin-payments"], ["Subscriptions", "admin-subscriptions"], ["Leads", "admin-leads"], ["Settings", "admin-settings"],
 ];
 const userNav: [string, Page][] = [
   ["Dashboard", "user-dashboard"], ["Checks", "user-checks"], ["Report ของฉัน", "user-reports"],
   ["Directory", "directory"], ["Check Before Transfer", "user-precheck"],
 ];
 
-export function PortalShell({ role, page, go, children }: { role: "Owner" | "Admin" | "User"; page: Page; go: Go; children: React.ReactNode }) {
-  const nav = role === "Owner" ? ownerNav : role === "Admin" ? adminNav : userNav;
+export function PortalShell({ role, page, go, children }: { role: "Merchant" | "Admin" | "User"; page: Page; go: Go; children: React.ReactNode }) {
+  const nav = role === "Merchant" ? ownerNav : role === "Admin" ? adminNav : userNav;
   const [menuOpen, setMenuOpen] = useState(false);
   const [logoutError, setLogoutError] = useState("");
   const signOut = async () => {
@@ -237,8 +232,8 @@ export function PortalShell({ role, page, go, children }: { role: "Owner" | "Adm
         <button className="portal-brand" onClick={() => navigate("home")}>Villa<span>Check</span></button>
         <button className="portal-menu-toggle" aria-expanded={menuOpen} aria-controls="portal-menu" onClick={() => setMenuOpen(value => !value)}>{menuOpen ? "ปิดเมนู ✕" : "เมนู ☰"}</button>
       </div>
-      <small>{role === "Owner" ? "MERCHANT" : role.toUpperCase()} PORTAL</small>
-      <nav id="portal-menu" aria-label={`เมนู ${role === "Owner" ? "Merchant" : role}`}>{nav.map(([label, target]) => <button key={target} aria-current={page === target ? "page" : undefined} className={page === target ? "active" : ""} onClick={() => navigate(target)}>{label}</button>)}</nav>
+      <small>{role === "Merchant" ? "MERCHANT" : role.toUpperCase()} PORTAL</small>
+      <nav id="portal-menu" aria-label={`เมนู ${role === "Merchant" ? "Merchant" : role}`}>{nav.map(([label, target]) => <button key={target} aria-current={page === target ? "page" : undefined} className={page === target ? "active" : ""} onClick={() => navigate(target)}>{label}</button>)}</nav>
       <button className="portal-logout" onClick={() => void signOut()}>ออกจากระบบ</button>{logoutError && <p role="alert">{logoutError}</p>}
     </aside>
     <section className="portal-content">{children}</section>
@@ -258,22 +253,22 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 }
 
 export function OwnerPages({ page, go, packageName, packageStatus, setPackageName, onPackageChange }: { page: Page; go: Go; packageName: string; packageStatus: string; setPackageName: (name: string) => void; onPackageChange: () => void }) {
-  if (page === "owner-dashboard") return <PortalShell role="Owner" page={page} go={go}>
+  if (page === "owner-dashboard") return <PortalShell role="Merchant" page={page} go={go}>
     <PortalHead title="Merchant Dashboard" subtitle="ภาพรวม Sea Sky Pool Villa" action={<button className="primary-button" onClick={() => go("owner-add-villa")}>+ Add Villa</button>} />
     <div className="package-strip"><span>แพ็กเกจปัจจุบัน</span><strong>{packageName}</strong><StatusBadge status={packageStatus.includes("Pending") ? "Pending" : "Verified"} /><small>{packageStatus}</small><button onClick={() => go("owner-package")}>เปลี่ยน Package</button></div>
     <div className="metric-grid"><Metric label="Villas" value="1" note="1 Verified" /><Metric label="QR Scans" value="248" note="+18% เดือนนี้" /><Metric label="Checks" value="91" note="Success 88" /><Metric label="Reports" value="2" note="Pending 1" /></div>
     <div className="portal-grid"><ActionCard title="จัดการ Villa" text="ดูรายละเอียด แก้ไข และสถานะ" action="เปิด Villas" onClick={() => go("owner-villas")} /><ActionCard title="Verification QR" text="เปิดหน้าสแกนและผลตรวจสอบ" action="เปิด QR" onClick={() => go("scan")} /><ActionCard title="Analytics" text="ดูสถิติการเข้าชม" action="ดู Analytics" onClick={() => go("owner-analytics")} /></div>
   </PortalShell>;
 
-  if (page === "owner-villas") return <PortalShell role="Owner" page={page} go={go}><PortalHead title="Villas" subtitle="จัดการที่พักทั้งหมด" action={<button className="primary-button" onClick={() => go("owner-add-villa")}>+ Add Villa</button>} /><DataRow title="Sea Sky Pool Villa" detail="บางแสน, ชลบุรี" status="Verified" action="ดูรายละเอียด" onClick={() => go("owner-villa-detail")} /></PortalShell>;
-  if (page === "owner-villa-detail") return <PortalShell role="Owner" page="owner-villas" go={go}><PortalHead title="Sea Sky Pool Villa" subtitle="Villa Detail · VC-TH-2025-01842" action={<button className="primary-button" onClick={() => go("owner-villa-edit")}>Edit</button>} /><DetailPanel /><button className="outline-button" onClick={() => go("verify")}>เปิด Verification Page</button></PortalShell>;
-  if (page === "owner-villa-edit") return <PortalShell role="Owner" page="owner-villas" go={go}><PortalHead title="Edit Villa" subtitle="แก้ไขข้อมูลที่พัก" /><VillaForm submitLabel="บันทึกการแก้ไข" onSubmit={() => go("owner-villa-detail")} /></PortalShell>;
-  if (page === "owner-add-villa") return <PortalShell role="Owner" page={page} go={go}><PortalHead title="Add Villa" subtitle="กรอกข้อมูลที่พักเพื่อส่งตรวจสอบ" /><VillaForm submitLabel="Preview" onSubmit={() => go("owner-preview")} /></PortalShell>;
-  if (page === "owner-preview") return <PortalShell role="Owner" page="owner-add-villa" go={go}><PortalHead title="Preview Villa" subtitle="ตรวจสอบข้อมูลก่อน Submit" /><DetailPanel /><div className="button-row"><button className="outline-button" onClick={() => go("owner-add-villa")}>กลับไปแก้ไข</button><button className="primary-button" onClick={() => go("owner-pending")}>Submit</button></div></PortalShell>;
-  if (page === "owner-pending") return <PortalShell role="Owner" page="owner-villas" go={go}><PortalHead title="Pending Review" subtitle="ส่งข้อมูลเข้าระบบสำเร็จ" /><StatePanel status="Pending" title="กำลังรอ Admin ตรวจสอบ" /><button className="primary-button" onClick={() => go("owner-villas")}>กลับไปหน้า Villas</button></PortalShell>;
-  if (page === "owner-analytics") return <PortalShell role="Owner" page={page} go={go}><PortalHead title="Analytics" subtitle="ข้อมูลสาธิต 30 วันล่าสุด" /><div className="metric-grid"><Metric label="Profile Views" value="1,248" note="+14%" /><Metric label="QR Scans" value="248" note="+18%" /><Metric label="Contact Clicks" value="93" note="+7%" /></div><div className="chart-demo">{[42,68,51,82,60,91,75].map((_, index) => <i key={index} className={`chart-bar-${index + 1}`} />)}</div></PortalShell>;
-  if (page === "owner-reports") return <PortalShell role="Owner" page={page} go={go}><PortalHead title="Reports" subtitle="รายการแจ้งปัญหาที่เกี่ยวข้องกับที่พัก" /><DataRow title="REP-1048" detail="ผู้ใช้แจ้งข้อมูลบัญชีไม่ตรง" status="Pending" action="รับทราบ" onClick={() => window.alert("บันทึกการรับทราบรายงานแล้ว")} /><DataRow title="REP-1022" detail="ข้อมูลติดต่อได้รับการแก้ไขแล้ว" status="Verified" action="ดูรายละเอียด" onClick={() => window.alert("รายงาน REP-1022: ดำเนินการสำเร็จ")} /></PortalShell>;
-  return <PortalShell role="Owner" page="owner-package" go={go}><PortalHead title="Package" subtitle={`แพ็กเกจปัจจุบัน: ${packageName} · ${packageStatus}`} /><PackagePicker selected={packageName} onSelect={name => { setPackageName(name); onPackageChange(); window.alert(`ส่งคำขอเปลี่ยนแพ็กเกจเป็น ${name} แล้ว`); }} /></PortalShell>;
+  if (page === "owner-villas") return <PortalShell role="Merchant" page={page} go={go}><PortalHead title="Villas" subtitle="จัดการที่พักทั้งหมด" action={<button className="primary-button" onClick={() => go("owner-add-villa")}>+ Add Villa</button>} /><DataRow title="Sea Sky Pool Villa" detail="บางแสน, ชลบุรี" status="Verified" action="ดูรายละเอียด" onClick={() => go("owner-villa-detail")} /></PortalShell>;
+  if (page === "owner-villa-detail") return <PortalShell role="Merchant" page="owner-villas" go={go}><PortalHead title="Sea Sky Pool Villa" subtitle="Villa Detail · VC-TH-2025-01842" action={<button className="primary-button" onClick={() => go("owner-villa-edit")}>Edit</button>} /><DetailPanel /><button className="outline-button" onClick={() => go("verify")}>เปิด Verification Page</button></PortalShell>;
+  if (page === "owner-villa-edit") return <PortalShell role="Merchant" page="owner-villas" go={go}><PortalHead title="Edit Villa" subtitle="แก้ไขข้อมูลที่พัก" /><VillaForm submitLabel="บันทึกการแก้ไข" onSubmit={() => go("owner-villa-detail")} /></PortalShell>;
+  if (page === "owner-add-villa") return <PortalShell role="Merchant" page={page} go={go}><PortalHead title="Add Villa" subtitle="กรอกข้อมูลที่พักเพื่อส่งตรวจสอบ" /><VillaForm submitLabel="Preview" onSubmit={() => go("owner-preview")} /></PortalShell>;
+  if (page === "owner-preview") return <PortalShell role="Merchant" page="owner-add-villa" go={go}><PortalHead title="Preview Villa" subtitle="ตรวจสอบข้อมูลก่อน Submit" /><DetailPanel /><div className="button-row"><button className="outline-button" onClick={() => go("owner-add-villa")}>กลับไปแก้ไข</button><button className="primary-button" onClick={() => go("owner-pending")}>Submit</button></div></PortalShell>;
+  if (page === "owner-pending") return <PortalShell role="Merchant" page="owner-villas" go={go}><PortalHead title="Pending Review" subtitle="ส่งข้อมูลเข้าระบบสำเร็จ" /><StatePanel status="Pending" title="กำลังรอ Admin ตรวจสอบ" /><button className="primary-button" onClick={() => go("owner-villas")}>กลับไปหน้า Villas</button></PortalShell>;
+  if (page === "owner-analytics") return <PortalShell role="Merchant" page={page} go={go}><PortalHead title="Analytics" subtitle="ข้อมูลสาธิต 30 วันล่าสุด" /><div className="metric-grid"><Metric label="Profile Views" value="1,248" note="+14%" /><Metric label="QR Scans" value="248" note="+18%" /><Metric label="Contact Clicks" value="93" note="+7%" /></div><div className="chart-demo">{[42,68,51,82,60,91,75].map((_, index) => <i key={index} className={`chart-bar-${index + 1}`} />)}</div></PortalShell>;
+  if (page === "owner-reports") return <PortalShell role="Merchant" page={page} go={go}><PortalHead title="Reports" subtitle="รายการแจ้งปัญหาที่เกี่ยวข้องกับที่พัก" /><DataRow title="REP-1048" detail="ผู้ใช้แจ้งข้อมูลบัญชีไม่ตรง" status="Pending" action="รับทราบ" onClick={() => window.alert("บันทึกการรับทราบรายงานแล้ว")} /><DataRow title="REP-1022" detail="ข้อมูลติดต่อได้รับการแก้ไขแล้ว" status="Verified" action="ดูรายละเอียด" onClick={() => window.alert("รายงาน REP-1022: ดำเนินการสำเร็จ")} /></PortalShell>;
+  return <PortalShell role="Merchant" page="owner-package" go={go}><PortalHead title="Package" subtitle={`แพ็กเกจปัจจุบัน: ${packageName} · ${packageStatus}`} /><PackagePicker selected={packageName} onSelect={name => { setPackageName(name); onPackageChange(); window.alert(`ส่งคำขอเปลี่ยนแพ็กเกจเป็น ${name} แล้ว`); }} /></PortalShell>;
 }
 
 function VillaForm({ submitLabel, onSubmit }: { submitLabel: string; onSubmit: () => void }) {
@@ -294,14 +289,15 @@ function DetailPanel() {
 }
 
 function PackagePicker({ selected, onSelect }: { selected: string; onSelect: (name: string) => void }) {
-  return <div className="package-picker">{["Basic Trust QR","Trust Starter","Trust Pro","Trust Plus","Trust Premium"].map(name => <button key={name} className={selected === name ? "active" : ""} onClick={() => onSelect(name)}><span>{name}</span><small>{selected === name ? "แพ็กเกจปัจจุบัน" : "เลือกแพ็กเกจ"}</small></button>)}</div>;
+  const {plans}=usePackages();
+  return <div className="package-picker">{plans.map(p=>p.name).map(name => <button key={name} className={selected === name ? "active" : ""} onClick={() => onSelect(name)}><span>{name}</span><small>{selected === name ? "แพ็กเกจปัจจุบัน" : "เลือกแพ็กเกจ"}</small></button>)}</div>;
 }
 
 export function AdminPages({ page, go, villaStatus, setVillaStatus }: { page: Page; go: Go; villaStatus: Status; setVillaStatus: (status: Status) => void }) {
-  if (page === "admin-dashboard") return <PortalShell role="Admin" page={page} go={go}><PortalHead title="Admin Dashboard" subtitle="ภาพรวมระบบ VillaCheck" /><div className="metric-grid"><Metric label="Pending Villas" value="4" note="รอตรวจสอบ" /><Metric label="Owners" value="128" note="Active 123" /><Metric label="Checks" value="2,481" note="เดือนนี้" /><Metric label="Reports" value="12" note="Open 3" /></div><ActionCard title="Pending Villa" text="Sea Sky Pool Villa รอการตรวจสอบ" action="Review" onClick={() => go("admin-review")} /><StateGallery /></PortalShell>;
+  if (page === "admin-dashboard") return <PortalShell role="Admin" page={page} go={go}><PortalHead title="Admin Dashboard" subtitle="ภาพรวมระบบ VillaCheck" /><div className="metric-grid"><Metric label="Pending Villas" value="4" note="รอตรวจสอบ" /><Metric label="Merchants" value="128" note="Active 123" /><Metric label="Checks" value="2,481" note="เดือนนี้" /><Metric label="Reports" value="12" note="Open 3" /></div><ActionCard title="Pending Villa" text="Sea Sky Pool Villa รอการตรวจสอบ" action="Review" onClick={() => go("admin-review")} /><StateGallery /></PortalShell>;
   if (page === "admin-review") return <PortalShell role="Admin" page="admin-villas" go={go}><PortalHead title="Review Villa" subtitle="ตรวจสอบข้อมูล Sea Sky Pool Villa" /><DetailPanel /><div className="review-actions"><button className="primary-button" onClick={() => { setVillaStatus("Verified"); go("admin-villas"); }}>Approve</button><button className="outline-button" onClick={() => { setVillaStatus("Pending"); window.alert("ส่งคำขอแก้ไขให้ Merchant แล้ว"); }}>Request Change</button><button className="danger-button" onClick={() => { setVillaStatus("Rejected"); go("admin-villas"); }}>Reject</button></div></PortalShell>;
   const configs: Partial<Record<Page, [string,string]>> = {
-    "admin-owners": ["Owners", "บัญชีเจ้าของที่พักและสถานะการใช้งาน"],
+    "admin-owners": ["Merchants", "บัญชีเจ้าของที่พักและสถานะการใช้งาน"],
     "admin-villas": ["Villas", "รายการ Villa และสถานะล่าสุด"],
     "admin-checks": ["Checks", "ประวัติการตรวจสอบก่อนโอน"],
     "admin-reports": ["Reports", "รายงานปัญหาจากผู้ใช้งาน"],
