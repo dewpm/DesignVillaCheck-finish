@@ -1,4 +1,10 @@
-import { getSubscription, subscriptionDto, activateSubscription, activateVilla, subscriptionInvoice } from "./subscriptions.mjs"
+import {
+  getSubscription,
+  subscriptionDto,
+  activateSubscription,
+  activateVilla,
+  subscriptionInvoice,
+} from "./subscriptions.mjs"
 import { createOAuth, oauthProviders } from "./oauth.mjs"
 import { createServer } from "node:http"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
@@ -13,7 +19,6 @@ import {
   addMonths,
 } from "./database.mjs"
 import { createMailWorker } from "./mail.mjs"
-
 class ApiError extends Error {
   constructor(status, message) {
     super(message)
@@ -47,6 +52,21 @@ function password(value) {
 async function body(req) {
   if (!req.headers["content-type"]?.startsWith("application/json"))
     fail(415, "ต้องส่งข้อมูล JSON")
+  if (req.body !== undefined) {
+    const encoded =
+      typeof req.body === "string" ? req.body : JSON.stringify(req.body)
+    if (Buffer.byteLength(encoded) > 3 * 1024 * 1024)
+      fail(413, "ไฟล์มีขนาดใหญ่เกินไป")
+    try {
+      const data =
+        typeof req.body === "string" ? JSON.parse(req.body) : req.body
+      if (!data || Array.isArray(data) || typeof data !== "object")
+        throw Error()
+      return data
+    } catch {
+      fail(400, "ข้อมูล JSON ไม่ถูกต้อง")
+    }
+  }
   const chunks = []
   let size = 0
   for await (const chunk of req) {
@@ -86,24 +106,37 @@ function document(value) {
   if (!valid) fail(400, "เนื้อหาไฟล์ไม่ตรงกับชนิดเอกสาร")
   return { name, mime, bytes }
 }
-function insertDocument(db, owner, file) {
+async function insertDocument(db, owner, file) {
   const id = randomUUID()
-  db.prepare("INSERT INTO documents VALUES (?,?,?,?,?)").run(
-    id,
-    owner,
-    file.name,
-    file.mime,
-    file.bytes,
-  )
+  await db
+    .prepare("INSERT INTO documents VALUES (?,?,?,?,?)")
+    .run(id, owner, file.name, file.mime, file.bytes)
   return id
 }
 export function createApp(db, config, transport) {
   const worker = createMailWorker(db, config, transport)
   const attempts = new Map()
-  function rateLimit(req) {
-    // Only trust the direct peer. Deploy behind one trusted proxy or add trusted-proxy handling.
-    const key = req.socket.remoteAddress
+  async function rateLimit(req) {
+    // Vercel overwrites this header. Other hosts use only the direct socket IP.
+    const address = config.serverless
+      ? req.headers["x-vercel-forwarded-for"] ||
+        req.headers["x-forwarded-for"] ||
+        req.socket.remoteAddress
+      : req.socket.remoteAddress
+    const key = hash(String(address))
     const now = Date.now()
+    if (config.serverless) {
+      const entry = await db.transaction(async () => {
+        await db.prepare("DELETE FROM rate_limits WHERE expires<=?").run(now)
+        return db
+          .prepare(
+            "INSERT INTO rate_limits(key,count,expires) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET count=rate_limits.count+1 RETURNING count",
+          )
+          .get(key, now + 15 * 60000)
+      })
+      if (entry.count > 30) fail(429, "ลองเข้าสู่ระบบมากเกินไป กรุณารอ 15 นาที")
+      return
+    }
     if (attempts.size > 10000)
       for (const [id, entry] of attempts)
         if (entry.until <= now) attempts.delete(id)
@@ -120,22 +153,35 @@ export function createApp(db, config, transport) {
     `vc_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${age}${
       config.secureCookies ? "; Secure" : ""
     }`
-  function issueSession(req, user) {
-    const old = req.headers.cookie?.match(/(?:^|;\s*)vc_session=([a-f0-9]{64})(?:;|$)/)?.[1];
-    if (old) db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(old));
-    db.prepare("DELETE FROM sessions WHERE expires<=?").run(Date.now());
-    const token = randomBytes(32).toString("hex"), csrf = randomBytes(24).toString("hex");
-    db.prepare("INSERT INTO sessions VALUES (?,?,?,?)").run(hash(token), user.id, csrf, Date.now() + 28800000);
-    db.prepare("UPDATE users SET last_login=? WHERE id=?").run(new Date().toISOString(), user.id);
-    return { csrf, cookie: cookie(token) };
+  async function issueSession(req, user) {
+    const old = req.headers.cookie?.match(
+      /(?:^|;\s*)vc_session=([a-f0-9]{64})(?:;|$)/,
+    )?.[1]
+    if (old)
+      await db.prepare("DELETE FROM sessions WHERE token_hash=?").run(hash(old))
+    await db.prepare("DELETE FROM sessions WHERE expires<=?").run(Date.now())
+    const token = randomBytes(32).toString("hex"),
+      csrf = randomBytes(24).toString("hex")
+    await db
+      .prepare("INSERT INTO sessions VALUES (?,?,?,?)")
+      .run(hash(token), user.id, csrf, Date.now() + 28800000)
+    await db
+      .prepare("UPDATE users SET last_login=? WHERE id=?")
+      .run(new Date().toISOString(), user.id)
+    return { csrf, cookie: cookie(token) }
   }
-  const oauth = createOAuth(db, config, issueSession, config.oauthFetch || fetch);
-  function session(req) {
+  const oauth = createOAuth(
+    db,
+    config,
+    issueSession,
+    config.oauthFetch || fetch,
+  )
+  async function session(req) {
     const token = req.headers.cookie?.match(
       /(?:^|;\s*)vc_session=([a-f0-9]{64})(?:;|$)/,
     )?.[1]
     if (!token) fail(401, "กรุณาเข้าสู่ระบบ")
-    const row = db
+    const row = await db
       .prepare(
         "SELECT s.*,u.id,u.email,u.name,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE token_hash=? AND expires>?",
       )
@@ -150,8 +196,8 @@ export function createApp(db, config, transport) {
     if (req.headers["sec-fetch-site"] === "cross-site")
       fail(403, "ไม่อนุญาตคำขอข้ามเว็บไซต์")
   }
-  function auth(req, role) {
-    const user = session(req)
+  async function auth(req, role) {
+    const user = await session(req)
     if (role && user.role !== role) fail(403, "ไม่มีสิทธิ์ดำเนินการ")
     if (!["GET", "HEAD"].includes(req.method)) {
       checkOrigin(req)
@@ -160,24 +206,26 @@ export function createApp(db, config, transport) {
     }
     return user
   }
-  function villaFor(user, id) {
-    const villa = db.prepare("SELECT * FROM villas WHERE id=?").get(id)
+  async function villaFor(user, id) {
+    const villa = await db.prepare("SELECT * FROM villas WHERE id=?").get(id)
     if (!villa || (user.role !== "admin" && villa.owner_id !== user.id))
       fail(404, "ไม่พบ Villa")
     return villa
   }
-  function invoiceFor(user, id) {
-    const invoice = db.prepare("SELECT * FROM invoices WHERE id=?").get(id)
+  async function invoiceFor(user, id) {
+    const invoice = await db
+      .prepare("SELECT * FROM invoices WHERE id=?")
+      .get(id)
     if (!invoice) fail(404, "ไม่พบใบแจ้งชำระ")
-    const villa = villaFor(user, invoice.villa_id)
+    const villa = await villaFor(user, invoice.villa_id)
     return { invoice, villa }
   }
-  function invoiceDto(invoice) {
+  async function invoiceDto(invoice) {
     const file =
       invoice.proof_id &&
-      db
+      (await db
         .prepare("SELECT name,mime FROM documents WHERE id=?")
-        .get(invoice.proof_id)
+        .get(invoice.proof_id))
     return {
       id: invoice.id,
       scope: invoice.subscription_owner ? "merchant" : "villa",
@@ -198,11 +246,11 @@ export function createApp(db, config, transport) {
         : null,
     }
   }
-  function villaDto(v) {
-    const file = db
+  async function villaDto(v) {
+    const file = await db
       .prepare("SELECT name,mime FROM documents WHERE id=?")
       .get(v.document_id)
-    const invoices = db
+    const invoices = await db
       .prepare("SELECT * FROM invoices WHERE villa_id=? ORDER BY created DESC")
       .all(v.id)
     return {
@@ -213,7 +261,10 @@ export function createApp(db, config, transport) {
       email: v.email,
       package: `${packages[v.package_id].name} · ฿${packages[v.package_id].amount / 100} / เดือน`,
       packageId: v.package_id,
-      phone: v.phone, bankName: v.bank_name, accountName: v.account_name, accountNumber: v.account_number,
+      phone: v.phone,
+      bankName: v.bank_name,
+      accountName: v.account_name,
+      accountNumber: v.account_number,
       status: v.status,
       reason: v.reason,
       qr: v.qr || "",
@@ -225,28 +276,28 @@ export function createApp(db, config, transport) {
         type: file.mime,
         data: `/api/documents/${v.document_id}`,
       },
-      invoices: invoices.map(invoiceDto),
+      invoices: await Promise.all(invoices.map(invoiceDto)),
     }
   }
-  function state(user) {
+  async function state(user) {
     const villas =
       user.role === "admin"
-        ? db.prepare("SELECT * FROM villas ORDER BY created DESC").all()
-        : db
+        ? await db.prepare("SELECT * FROM villas ORDER BY created DESC").all()
+        : await db
             .prepare(
               "SELECT * FROM villas WHERE owner_id=? ORDER BY created DESC",
             )
             .all(user.id)
     const mails =
       user.role === "admin"
-        ? db.prepare("SELECT * FROM mails ORDER BY created DESC").all()
-        : db
+        ? await db.prepare("SELECT * FROM mails ORDER BY created DESC").all()
+        : await db
             .prepare(
               "SELECT m.* FROM mails m JOIN villas v ON v.id=m.villa_id WHERE v.owner_id=? ORDER BY m.created DESC",
             )
             .all(user.id)
     return {
-      villas: villas.map(villaDto),
+      villas: await Promise.all(villas.map(villaDto)),
       mails: mails.map((m) => ({
         id: m.id,
         villaId: m.villa_id,
@@ -263,7 +314,7 @@ export function createApp(db, config, transport) {
         email: user.email,
         role: user.role,
       },
-      subscription: subscriptionDto(db, user.id),
+      subscription: await subscriptionDto(db, user.id),
       paymentInstructions:
         config.paymentInstructions ||
         "ยังไม่ได้ตั้งค่าบัญชีรับชำระ กรุณาติดต่อทีมงานก่อนโอนเงิน",
@@ -292,28 +343,46 @@ export function createApp(db, config, transport) {
           paymentConfigured: Boolean(config.paymentInstructions),
           oauth: oauthProviders(config),
         })
-      if (req.method === "GET" && /^\/api\/auth\/oauth\/(google|facebook)\/start$/.test(path)) rateLimit(req)
+      if (
+        req.method === "GET" &&
+        /^\/api\/auth\/oauth\/(google|facebook)\/start$/.test(path)
+      )
+        await rateLimit(req)
       if (await oauth(req, res, url)) return
       if (
         req.method === "POST" &&
-        ["/api/auth/login", "/api/auth/register", "/api/auth/register-user"].includes(path)
+        [
+          "/api/auth/login",
+          "/api/auth/register",
+          "/api/auth/register-user",
+        ].includes(path)
       ) {
         checkOrigin(req)
-        rateLimit(req)
+        await rateLimit(req)
         const data = await body(req)
         let user
         if (path.endsWith("register") || path.endsWith("register-user")) {
           const address = email(data.email)
           const pass = password(data.password)
           const name = text(data.name, "ชื่อผู้สมัคร")
-          if (db.prepare("SELECT id FROM users WHERE email=?").get(address))
+          if (
+            await db.prepare("SELECT id FROM users WHERE email=?").get(address)
+          )
             fail(409, "อีเมลนี้ถูกใช้งานแล้ว")
-          user = createUser(db, address, pass, name, path.endsWith("register-user") ? "user" : "merchant")
+          user = await createUser(
+            db,
+            address,
+            pass,
+            name,
+            path.endsWith("register-user") ? "user" : "merchant",
+          )
         } else {
           const address = email(data.email)
           if (typeof data.password !== "string" || data.password.length > 128)
             fail(401, "อีเมลหรือรหัสผ่านไม่ถูกต้อง")
-          user = db.prepare("SELECT * FROM users WHERE email=?").get(address)
+          user = await db
+            .prepare("SELECT * FROM users WHERE email=?")
+            .get(address)
           // Equal-cost verification for unknown accounts.
           const fakeHash = config.fakeHash
           if (
@@ -322,8 +391,8 @@ export function createApp(db, config, transport) {
           )
             fail(401, "อีเมลหรือรหัสผ่านไม่ถูกต้อง")
         }
-        const { csrf, cookie: sessionCookie } = issueSession(req, user);
-        res.setHeader("Set-Cookie", sessionCookie);
+        const { csrf, cookie: sessionCookie } = await issueSession(req, user)
+        res.setHeader("Set-Cookie", sessionCookie)
         return json({
           user: {
             id: user.id,
@@ -335,7 +404,7 @@ export function createApp(db, config, transport) {
         })
       }
       if (req.method === "GET" && path === "/api/auth/me") {
-        const user = session(req)
+        const user = await session(req)
         return json({
           user: {
             id: user.id,
@@ -347,46 +416,82 @@ export function createApp(db, config, transport) {
         })
       }
       if (req.method === "POST" && path === "/api/auth/logout") {
-        const user = auth(req)
-        db.prepare("DELETE FROM sessions WHERE token_hash=?").run(
-          user.token_hash,
-        )
+        const user = await auth(req)
+        await db
+          .prepare("DELETE FROM sessions WHERE token_hash=?")
+          .run(user.token_hash)
         res.setHeader("Set-Cookie", cookie("", 0))
         return json({ ok: true })
       }
       if (req.method === "GET" && path.startsWith("/api/public/qr/")) {
-        const v = db
+        const v = await db
           .prepare(
             "SELECT name,province,status,qr,expires,phone,bank_name,account_name,account_number FROM villas WHERE qr=?",
           )
           .get(decodeURIComponent(path.slice(15)))
         if (!v) fail(404, "ไม่พบ QR ในระบบ")
-        let viewer;
-        try { viewer = session(req); } catch (error) { if (error.status !== 401) throw error; }
-        const unlocked = viewer?.role === "user";
-        return json({ name: v.name, province: v.province, status: v.status, qr: v.qr, expires: v.expires,
-          valid: v.status === "approved" && new Date(v.expires).getTime() > Date.now(),
+        let viewer
+        try {
+          viewer = await session(req)
+        } catch (error) {
+          if (error.status !== 401) throw error
+        }
+        const unlocked = viewer?.role === "user"
+        return json({
+          name: v.name,
+          province: v.province,
+          status: v.status,
+          qr: v.qr,
+          expires: v.expires,
+          valid:
+            v.status === "approved" &&
+            new Date(v.expires).getTime() > Date.now(),
           locked: !unlocked,
-          ...(unlocked ? { phone: v.phone, bankName: v.bank_name, accountName: v.account_name, accountNumber: v.account_number } : {}),
-        });
+          ...(unlocked
+            ? {
+                phone: v.phone,
+                bankName: v.bank_name,
+                accountName: v.account_name,
+                accountNumber: v.account_number,
+              }
+            : {}),
+        })
       }
-
       if (path.startsWith("/api/")) {
-        const user = auth(req)
+        const user = await auth(req)
         if (req.method === "GET" && path === "/api/admin/users") {
-          if (user.role !== "admin") fail(403, "เฉพาะ Admin");
-          const users = db.prepare("SELECT id,name,email,role,created,last_login FROM users WHERE role='user' ORDER BY created DESC").all();
-          return json({ users: users.map(u => ({ id: u.id, name: u.name, email: u.email, created: u.created, lastLogin: u.last_login,
-            providers: db.prepare("SELECT provider FROM oauth_identities WHERE user_id=?").all(u.id).map(p => p.provider),
-          })) });
+          if (user.role !== "admin") fail(403, "เฉพาะ Admin")
+          const users = await db
+            .prepare(
+              "SELECT id,name,email,role,created,last_login FROM users WHERE role='user' ORDER BY created DESC",
+            )
+            .all()
+          return json({
+            users: await Promise.all(
+              users.map(async (u) => ({
+                id: u.id,
+                name: u.name,
+                email: u.email,
+                created: u.created,
+                lastLogin: u.last_login,
+                providers: (
+                  await db
+                    .prepare(
+                      "SELECT provider FROM oauth_identities WHERE user_id=?",
+                    )
+                    .all(u.id)
+                ).map((p) => p.provider),
+              })),
+            ),
+          })
         }
         if (!["merchant", "admin"].includes(user.role))
           fail(403, "เฉพาะ Merchant หรือ Admin")
         if (req.method === "GET" && path === "/api/state")
-          return json(state(user))
+          return json(await state(user))
         const docMatch = path.match(/^\/api\/documents\/([a-f0-9-]+)$/)
         if (req.method === "GET" && docMatch) {
-          const file = db
+          const file = await db
             .prepare("SELECT * FROM documents WHERE id=?")
             .get(docMatch[1])
           if (!file || (user.role !== "admin" && file.owner_id !== user.id))
@@ -399,20 +504,31 @@ export function createApp(db, config, transport) {
           return res.end(Buffer.from(file.bytes))
         }
         if (req.method === "POST" && path === "/api/subscription") {
-          if (user.role !== "merchant") fail(403, "เฉพาะ Merchant");
-          const data = await body(req);
-          if (!Object.hasOwn(packages, data.packageId)) fail(400, "แพ็กเกจไม่ถูกต้อง");
-          transaction(db, () => {
-            const current = getSubscription(db, user.id);
-            if (current && current.package_id !== data.packageId) fail(409, "บัญชีนี้สมัครแพ็กเกจแล้ว กรุณาใช้แพ็กเกจปัจจุบัน");
+          if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
+          const data = await body(req)
+          if (!Object.hasOwn(packages, data.packageId))
+            fail(400, "แพ็กเกจไม่ถูกต้อง")
+          await transaction(db, async () => {
+            const current = await getSubscription(db, user.id)
+            if (current && current.package_id !== data.packageId)
+              fail(409, "บัญชีนี้สมัครแพ็กเกจแล้ว กรุณาใช้แพ็กเกจปัจจุบัน")
             if (!current) {
-              const count = db.prepare("SELECT count(*) AS n FROM villas WHERE owner_id=?").get(user.id).n;
-              if (count > packages[data.packageId].capacity) fail(409, "จำนวน Villa เกินสิทธิ์แพ็กเกจ");
-              db.prepare("INSERT INTO subscriptions(owner_id,package_id,created) VALUES (?,?,?)").run(user.id, data.packageId, new Date().toISOString());
-              audit(db, user, "subscription.select", user.id);
+              const count = (
+                await db
+                  .prepare("SELECT count(*) AS n FROM villas WHERE owner_id=?")
+                  .get(user.id)
+              ).n
+              if (count > packages[data.packageId].capacity)
+                fail(409, "จำนวน Villa เกินสิทธิ์แพ็กเกจ")
+              await db
+                .prepare(
+                  "INSERT INTO subscriptions(owner_id,package_id,created) VALUES (?,?,?)",
+                )
+                .run(user.id, data.packageId, new Date().toISOString())
+              await audit(db, user, "subscription.select", user.id)
             }
-          });
-          return json(state(user));
+          })
+          return json(await state(user))
         }
         if (req.method === "POST" && path === "/api/villas") {
           if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
@@ -421,37 +537,62 @@ export function createApp(db, config, transport) {
             province = text(data.province, "จังหวัด"),
             merchant = text(data.merchant, "ชื่อ Merchant"),
             address = email(data.email)
-          const subscription = getSubscription(db, user.id);
-          if (!subscription) fail(409, "กรุณาสมัครแพ็กเกจที่บัญชี Merchant ก่อนเพิ่ม Villa");
-          const contacts = [data.phone || "", data.bankName || "", data.accountName || "", data.accountNumber || ""];
-          for (const value of contacts) if (typeof value !== "string" || value.length > 200 || /[\x00-\x1f]/.test(value)) fail(400, "ข้อมูลติดต่อหรือบัญชีไม่ถูกต้อง");
-          if (contacts[0] && !/^[+0-9 ()-]{8,25}$/.test(contacts[0])) fail(400, "เบอร์โทรไม่ถูกต้อง");
-          if (contacts[3] && !/^[0-9 -]{6,30}$/.test(contacts[3])) fail(400, "เลขบัญชีไม่ถูกต้อง");
-          const file = document(data.document)
-          const id = transaction(db, () => {
-            const sub = getSubscription(db, user.id);
-            const used = db.prepare("SELECT count(*) AS n FROM villas WHERE owner_id=?").get(user.id).n;
-            if (used >= packages[sub.package_id].capacity) fail(409, "จำนวน Villa ครบสิทธิ์แพ็กเกจแล้ว");
-            const docId = insertDocument(db, user.id, file)
-            const id = randomUUID()
-            db.prepare(
-              "INSERT INTO villas(id,owner_id,name,province,merchant,email,package_id,document_id,created) VALUES (?,?,?,?,?,?,?,?,?)",
-            ).run(
-              id,
-              user.id,
-              name,
-              province,
-              merchant,
-              address,
-              subscription.package_id,
-              docId,
-              new Date().toISOString(),
+          const subscription = await getSubscription(db, user.id)
+          if (!subscription)
+            fail(409, "กรุณาสมัครแพ็กเกจที่บัญชี Merchant ก่อนเพิ่ม Villa")
+          const contacts = [
+            data.phone || "",
+            data.bankName || "",
+            data.accountName || "",
+            data.accountNumber || "",
+          ]
+          for (const value of contacts)
+            if (
+              typeof value !== "string" ||
+              value.length > 200 ||
+              /[\x00-\x1f]/.test(value)
             )
-            db.prepare("UPDATE villas SET phone=?,bank_name=?,account_name=?,account_number=? WHERE id=?").run(...contacts, id);
-            audit(db, user, "villa.create", id)
+              fail(400, "ข้อมูลติดต่อหรือบัญชีไม่ถูกต้อง")
+          if (contacts[0] && !/^[+0-9 ()-]{8,25}$/.test(contacts[0]))
+            fail(400, "เบอร์โทรไม่ถูกต้อง")
+          if (contacts[3] && !/^[0-9 -]{6,30}$/.test(contacts[3]))
+            fail(400, "เลขบัญชีไม่ถูกต้อง")
+          const file = document(data.document)
+          const id = await transaction(db, async () => {
+            const sub = await getSubscription(db, user.id)
+            const used = (
+              await db
+                .prepare("SELECT count(*) AS n FROM villas WHERE owner_id=?")
+                .get(user.id)
+            ).n
+            if (used >= packages[sub.package_id].capacity)
+              fail(409, "จำนวน Villa ครบสิทธิ์แพ็กเกจแล้ว")
+            const docId = await insertDocument(db, user.id, file)
+            const id = randomUUID()
+            await db
+              .prepare(
+                "INSERT INTO villas(id,owner_id,name,province,merchant,email,package_id,document_id,created) VALUES (?,?,?,?,?,?,?,?,?)",
+              )
+              .run(
+                id,
+                user.id,
+                name,
+                province,
+                merchant,
+                address,
+                sub.package_id,
+                docId,
+                new Date().toISOString(),
+              )
+            await db
+              .prepare(
+                "UPDATE villas SET phone=?,bank_name=?,account_name=?,account_number=? WHERE id=?",
+              )
+              .run(...contacts, id)
+            await audit(db, user, "villa.create", id)
             return id
           })
-          return json({ ...state(user), createdId: id }, 201)
+          return json({ ...(await state(user)), createdId: id }, 201)
         }
         const villaAction = path.match(
           /^\/api\/villas\/([a-f0-9-]+)\/(review|resubmit|renew)$/,
@@ -459,8 +600,8 @@ export function createApp(db, config, transport) {
         if (req.method === "POST" && villaAction) {
           const [, id, action] = villaAction
           const data = await body(req)
-          transaction(db, () => {
-            const villa = villaFor(user, id)
+          await transaction(db, async () => {
+            const villa = await villaFor(user, id)
             if (action === "review") {
               if (user.role !== "admin") fail(403, "เฉพาะ Admin")
               if (villa.status !== "pending") fail(409, "Villa นี้ถูกตรวจสอบแล้ว")
@@ -470,48 +611,64 @@ export function createApp(db, config, transport) {
                 data.status === "approved"
                   ? ""
                   : text(data.reason, "เหตุผล", 2000)
-              db.prepare("UPDATE villas SET status=?,reason=? WHERE id=?").run(
-                data.status,
-                reason,
-                id,
-              )
+              await db
+                .prepare("UPDATE villas SET status=?,reason=? WHERE id=?")
+                .run(data.status, reason, id)
               if (data.status === "approved") {
-                const sub = getSubscription(db, villa.owner_id);
-                if (!sub) fail(409, "Merchant ต้องสมัครแพ็กเกจที่บัญชีก่อน");
-                if (!activateVilla(db, villa)) {
-                  const invoiceId = subscriptionInvoice(db, villa, config.appUrl);
+                const sub = await getSubscription(db, villa.owner_id)
+                if (!sub) fail(409, "Merchant ต้องสมัครแพ็กเกจที่บัญชีก่อน")
+                if (!(await activateVilla(db, villa))) {
+                  const invoiceId = await subscriptionInvoice(
+                    db,
+                    villa,
+                    config.appUrl,
+                  )
                   if (sub.package_id === "basic" && sub.payments === 0) {
-                    db.prepare("UPDATE invoices SET status='paid',paid_at=?,confirmed_by=? WHERE id=?").run(new Date().toISOString(), user.id, invoiceId);
-                    activateSubscription(db, villa.owner_id, 3);
+                    await db
+                      .prepare(
+                        "UPDATE invoices SET status='paid',paid_at=?,confirmed_by=? WHERE id=?",
+                      )
+                      .run(new Date().toISOString(), user.id, invoiceId)
+                    await activateSubscription(db, villa.owner_id, 3)
                   }
                 }
               }
-              audit(db, user, `villa.${data.status}`, id)
+              await audit(db, user, `villa.${data.status}`, id)
             } else if (action === "resubmit") {
               if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
               if (!["changes", "rejected"].includes(villa.status))
                 fail(409, "ยังไม่สามารถส่งเอกสารใหม่ได้")
               const file = document(data.document)
-              const docId = insertDocument(db, user.id, file)
-              db.prepare(
-                "UPDATE villas SET document_id=?,status='pending',reason='' WHERE id=?",
-              ).run(docId, id)
-              audit(db, user, "villa.resubmit", id)
+              const docId = await insertDocument(db, user.id, file)
+              await db
+                .prepare(
+                  "UPDATE villas SET document_id=?,status='pending',reason='' WHERE id=?",
+                )
+                .run(docId, id)
+              await audit(db, user, "villa.resubmit", id)
             } else {
               if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
-              if (villa.status !== "approved" || !villa.qr) fail(409, "ต้องเปิดใช้ QR ก่อนต่ออายุแพ็กเกจ");
-              let sub = getSubscription(db, villa.owner_id);
-              if (!sub) fail(409, "ไม่พบแพ็กเกจ Merchant");
+              if (villa.status !== "approved" || !villa.qr)
+                fail(409, "ต้องเปิดใช้ QR ก่อนต่ออายุแพ็กเกจ")
+              let sub = await getSubscription(db, villa.owner_id)
+              if (!sub) fail(409, "ไม่พบแพ็กเกจ Merchant")
               if (sub.package_id === "basic") {
-                if (!Object.hasOwn(packages, data.packageId) || data.packageId === "basic") fail(400, "ทดลองฟรีใช้ได้ครั้งเดียว กรุณาเลือกแพ็กเกจชำระเงินเพื่อต่ออายุ");
-
-
+                if (
+                  !Object.hasOwn(packages, data.packageId) ||
+                  data.packageId === "basic"
+                )
+                  fail(400, "ทดลองฟรีใช้ได้ครั้งเดียว กรุณาเลือกแพ็กเกจชำระเงินเพื่อต่ออายุ")
               }
-              subscriptionInvoice(db, villa, config.appUrl, sub.package_id === "basic" ? data.packageId : undefined);
-              audit(db, user, "subscription.renew", user.id);
+              await subscriptionInvoice(
+                db,
+                villa,
+                config.appUrl,
+                sub.package_id === "basic" ? data.packageId : undefined,
+              )
+              await audit(db, user, "subscription.renew", user.id)
             }
           })
-          json(state(user))
+          json(await state(user))
           void worker.run()
           return
         }
@@ -521,8 +678,8 @@ export function createApp(db, config, transport) {
         if (req.method === "POST" && invoiceAction) {
           const [, id, action] = invoiceAction
           const data = await body(req)
-          transaction(db, () => {
-            const { invoice, villa } = invoiceFor(user, id)
+          await transaction(db, async () => {
+            const { invoice, villa } = await invoiceFor(user, id)
             if (villa.status !== "approved") fail(409, "Villa ยังไม่ผ่านการอนุมัติ")
             if (action === "proof") {
               if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
@@ -530,20 +687,28 @@ export function createApp(db, config, transport) {
               if (invoice.status !== "pending")
                 fail(409, "ใบแจ้งชำระนี้อยู่ระหว่างตรวจสอบหรือชำระแล้ว")
               const reference = text(data.reference, "เลขอ้างอิงการโอน", 150)
-              const docId = insertDocument(db, user.id, document(data.document))
-              db.prepare(
-                "UPDATE invoices SET status='submitted',proof_id=?,reference=?,reason='' WHERE id=?",
-              ).run(docId, reference, id)
-              audit(db, user, "invoice.proof", id)
+              const docId = await insertDocument(
+                db,
+                user.id,
+                document(data.document),
+              )
+              await db
+                .prepare(
+                  "UPDATE invoices SET status='submitted',proof_id=?,reference=?,reason='' WHERE id=?",
+                )
+                .run(docId, reference, id)
+              await audit(db, user, "invoice.proof", id)
             } else {
               if (user.role !== "admin") fail(403, "เฉพาะ Admin")
               if (action === "confirm" && invoice.status === "paid") return
               if (invoice.status !== "submitted" || !invoice.proof_id)
                 fail(409, "ต้องมีหลักฐานการชำระรอตรวจสอบ")
               if (action === "reject") {
-                db.prepare(
-                  "UPDATE invoices SET status='pending',reason=? WHERE id=?",
-                ).run(text(data.reason, "เหตุผล", 2000), id)
+                await db
+                  .prepare(
+                    "UPDATE invoices SET status='pending',reason=? WHERE id=?",
+                  )
+                  .run(text(data.reason, "เหตุผล", 2000), id)
               } else {
                 const now = new Date()
                 const base =
@@ -551,38 +716,59 @@ export function createApp(db, config, transport) {
                     ? new Date(villa.expires)
                     : now
                 const expires = addMonths(base, invoice.months)
-                db.prepare(
-                  "UPDATE invoices SET status='paid',paid_at=?,confirmed_by=? WHERE id=?",
-                ).run(now.toISOString(), user.id, id)
+                await db
+                  .prepare(
+                    "UPDATE invoices SET status='paid',paid_at=?,confirmed_by=? WHERE id=?",
+                  )
+                  .run(now.toISOString(), user.id, id)
                 if (invoice.subscription_owner) {
                   if (invoice.package_id) {
-                    db.prepare("UPDATE subscriptions SET package_id=? WHERE owner_id=?").run(invoice.package_id, invoice.subscription_owner);
-                    db.prepare("UPDATE villas SET package_id=? WHERE owner_id=?").run(invoice.package_id, invoice.subscription_owner);
+                    await db
+                      .prepare(
+                        "UPDATE subscriptions SET package_id=? WHERE owner_id=?",
+                      )
+                      .run(invoice.package_id, invoice.subscription_owner)
+                    await db
+                      .prepare(
+                        "UPDATE villas SET package_id=? WHERE owner_id=?",
+                      )
+                      .run(invoice.package_id, invoice.subscription_owner)
                   }
-                  activateSubscription(db, invoice.subscription_owner, invoice.months, now);
-                }
-                else db.prepare("UPDATE villas SET qr=?,expires=?,payments=payments+1 WHERE id=?").run(villa.qr || `VC-${randomUUID()}`, expires, villa.id);
+                  await activateSubscription(
+                    db,
+                    invoice.subscription_owner,
+                    invoice.months,
+                    now,
+                  )
+                } else
+                  await db
+                    .prepare(
+                      "UPDATE villas SET qr=?,expires=?,payments=payments+1 WHERE id=?",
+                    )
+                    .run(villa.qr || `VC-${randomUUID()}`, expires, villa.id)
               }
-              audit(db, user, `invoice.${action}`, id)
+              await audit(db, user, `invoice.${action}`, id)
             }
           })
-          return json(state(user))
+          return json(await state(user))
         }
         const retry = path.match(/^\/api\/mails\/([a-f0-9-]+)\/retry$/)
         if (req.method === "POST" && retry) {
           if (user.role !== "admin") fail(403, "เฉพาะ Admin")
           if (!transport) fail(409, "ยังไม่ได้ตั้งค่า SMTP")
-          const mail = db
+          const mail = await db
             .prepare("SELECT status FROM mails WHERE id=?")
             .get(retry[1])
           if (!mail) fail(404, "ไม่พบอีเมล")
           if (mail.status === "sending" || mail.status === "sent")
             fail(409, "อีเมลส่งแล้วหรือกำลังส่ง")
-          db.prepare(
-            "UPDATE mails SET status='queued',attempts=0,next_attempt=0 WHERE id=?",
-          ).run(retry[1])
-          audit(db, user, "mail.retry", retry[1])
-          json(state(user))
+          await db
+            .prepare(
+              "UPDATE mails SET status='queued',attempts=0,next_attempt=0 WHERE id=?",
+            )
+            .run(retry[1])
+          await audit(db, user, "mail.retry", retry[1])
+          json(await state(user))
           void worker.run()
           return
         }
@@ -634,5 +820,6 @@ export function createApp(db, config, transport) {
   server.requestTimeout = 30000
   server.headersTimeout = 15000
   server.on("close", () => worker.stop())
+  server.runMail = worker.run
   return server
 }

@@ -1,6 +1,6 @@
 # VillaCheck Backend
 
-Node.js 24 HTTP API with a SQLite database, private document storage, password hashing, HttpOnly session cookies, CSRF protection, role checks, invoices, audit events, and a durable SMTP outbox. The frontend uses `/api` through the Vite proxy; production serves `dist/` from the same server.
+Node.js 24 HTTP API with PostgreSQL (`DATABASE_URL`) or a local SQLite database, private document storage, password hashing, HttpOnly session cookies, CSRF protection, role checks, invoices, audit events, and a durable SMTP outbox. The frontend uses `/api` through the Vite proxy locally. Vercel production runs the API as a Node.js Function; see `../DEPLOYMENT.md` for Neon setup. A standalone server can also serve `dist/`.
 
 ## Local development
 
@@ -10,7 +10,7 @@ Node.js 24 HTTP API with a SQLite database, private document storage, password h
 4. Run `npm run backend`. The existing Vite server proxies `/api` to port 3001. For a new checkout, run `npm run dev` separately.
 5. If Vite is unavailable, set `SERVE_FRONTEND=true`, run `npm run build`, set `APP_URL=http://localhost:3001`, and open `http://localhost:3001/#page=login`. Otherwise open the Vite app. Log in, or register a merchant. Upload ownership documents, switch to Admin, review the villa, and approve it.
 
-Database and document bytes persist in `server/data/villacheck.sqlite` (ignored by Git). Browser localStorage prototypes are not imported. Documents can only be downloaded by their merchant or an admin.
+With `DATABASE_URL` set, database and document bytes persist in PostgreSQL. Otherwise they persist in `server/data/villacheck.sqlite` (ignored by Git). Switching to an empty PostgreSQL database does not import local SQLite data. Browser localStorage prototypes are not imported. Documents can only be downloaded by their merchant or an admin.
 
 ## Payments and QR
 
@@ -39,7 +39,7 @@ Approval/renewal immediately queues an email, and the worker sends it automatica
 3. Run `npm run build`, then `npm start` behind an HTTPS reverse proxy. Proxy to 127.0.0.1:3001. Bind `BACKEND_HOST=0.0.0.0` only when needed by your hosting/container setup.
 4. Persist and back up the database directory, including SQLite WAL/SHM files. The DB contains private documents; restrict host access and use encrypted volumes/backups. Keep a single API process for this SQLite/outbox deployment.
 
-The current login rate limit keys by direct socket IP; a reverse proxy therefore shares a limit across users. Configure rate limiting at your trusted proxy before public rollout. Account recovery, email address verification, automated receipt verification, malware scanning, and external monitoring remain deployment extensions. API guards and data isolation are implemented, but the rest of the public directory/User pages still contain the existing presentation fixtures.
+Standalone login rate limiting keys by direct socket IP. Vercel uses its trusted forwarded client IP and stores counters in PostgreSQL across function instances. Configure rate limiting at your trusted proxy for other reverse-proxy deployments. Account recovery, email address verification, automated receipt verification, malware scanning, and external monitoring remain deployment extensions. API guards and data isolation are implemented, but the rest of the public directory/User pages still contain the existing presentation fixtures.
 
 ## Tests
 
@@ -90,3 +90,7 @@ Additional routes:
 Authenticated POST requests require the `X-CSRF-Token` returned by login or `/api/auth/me`. Clients cannot choose roles, verification status, QR references, invoice amounts, expiry dates, or payment state.
 
 Implementation references: [Node SQLite](https://nodejs.org/api/sqlite.html), [Nodemailer SMTP](https://nodemailer.com/smtp).
+
+## PostgreSQL tests
+
+Set `TEST_DATABASE_URL` and run `npm run test:backend` to run the subscription and User/OAuth workflow tests against isolated PostgreSQL schemas, plus transaction rollback, binary documents, epoch timestamp and concurrent outbox claims. SQLite persistence tests remain enabled.

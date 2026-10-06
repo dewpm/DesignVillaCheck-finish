@@ -1,50 +1,65 @@
 export function createMailWorker(db, config, transport) {
-  let busy = false
-  async function run() {
-    if (busy || !transport) return
-    busy = true
-    try {
-      const mails = db
-        .prepare(
-          "SELECT * FROM mails WHERE status IN ('queued','failed') AND next_attempt <= ? AND attempts < 8 ORDER BY created LIMIT 10",
-        )
-        .all(Date.now())
-      for (const mail of mails) {
+  let active
+  function run() {
+    if (!transport) return Promise.resolve()
+    if (!active)
+      active = drain().finally(() => {
+        active = undefined
+      })
+    return active
+  }
+  async function drain() {
+    // Delivery leases allow retry after an interrupted function invocation.
+    for (let i = 0; i < (config.serverless ? 1 : 10); i++) {
+      const now = Date.now()
+      const mail = await db.transaction(() =>
         db.prepare(
-          "UPDATE mails SET status='sending', attempts=attempts+1 WHERE id=?",
-        ).run(mail.id)
-        try {
-          await transport.sendMail({
-            from: config.smtpFrom,
-            to: mail.recipient,
-            subject: mail.subject,
-            text: mail.body,
-            messageId: `<${mail.id}@villacheck.local>`,
-          })
-          db.prepare(
+          "UPDATE mails SET status='sending',attempts=attempts+1,next_attempt=? WHERE id=(SELECT id FROM mails WHERE status IN ('queued','failed','sending') AND next_attempt<=? AND attempts<8 ORDER BY created LIMIT 1) RETURNING *",
+        ).get(now + 120000, now),
+      )
+      if (!mail) break
+      try {
+        await transport.sendMail({
+          from: config.smtpFrom,
+          to: mail.recipient,
+          subject: mail.subject,
+          text: mail.body,
+          messageId: `<${mail.id}@villacheck.local>`,
+        })
+        await db
+          .prepare(
             "UPDATE mails SET status='sent',sent_at=?,last_error='' WHERE id=?",
-          ).run(new Date().toISOString(), mail.id)
-        } catch (error) {
-          // Do not store SMTP credentials, connection URLs, or transport error details.
-          const reason =
-            error.code === "EAUTH"
-              ? "SMTP authentication failed"
-              : "SMTP delivery failed; check server SMTP configuration"
-          db.prepare(
+          )
+          .run(new Date().toISOString(), mail.id)
+      } catch (error) {
+        // Do not store SMTP credentials, connection URLs, or transport error details.
+        const reason =
+          error.code === "EAUTH"
+            ? "SMTP authentication failed"
+            : "SMTP delivery failed; check server SMTP configuration"
+        await db
+          .prepare(
             "UPDATE mails SET status='failed',last_error=?,next_attempt=? WHERE id=?",
-          ).run(
+          )
+          .run(
             reason,
             Date.now() + Math.min(3600000, 30000 * 2 ** mail.attempts),
             mail.id,
           )
-        }
       }
-    } finally {
-      busy = false
     }
   }
-  const timer = setInterval(() => void run(), 10000)
-  timer.unref()
-  void run()
+  const timer = config.serverless
+    ? null
+    : setInterval(
+        () =>
+          void run().catch(() =>
+            console.error("Mail outbox processing failed"),
+          ),
+        10000,
+      )
+  timer?.unref()
+  if (!config.serverless)
+    void run().catch(() => console.error("Mail outbox processing failed"))
   return { run, stop: () => clearInterval(timer) }
 }

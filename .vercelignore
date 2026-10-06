@@ -1,0 +1,6 @@
+.env
+.env.*
+server/data
+server/*.test.mjs
+Dockerfile
+render.yaml

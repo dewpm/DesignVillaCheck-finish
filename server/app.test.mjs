@@ -10,25 +10,28 @@ import {
   hashPassword,
   openDatabase,
 } from "./database.mjs"
-
 test("calendar months use Bangkok time and clamp end of month", () => {
   assert.equal(addMonths("2026-01-31T12:00:00Z", 1), "2026-02-28T12:00:00.000Z")
   assert.equal(addMonths("2026-01-30T20:00:00Z", 1), "2026-02-27T20:00:00.000Z")
   assert.equal(addMonths("2026-10-06T12:00:00Z", 3), "2027-01-06T12:00:00.000Z")
 })
-
 test("real HTTP workflow, authorization, mail outbox and persistent QR", async (t) => {
   const folder = mkdtempSync(join(tmpdir(), "villacheck-test-"))
   let db = openDatabase(join(folder, "test.sqlite"))
-  const admin = createUser(
+  const admin = await createUser(
     db,
     "admin@example.com",
     "Admin-password-123",
     "Admin",
     "admin",
   )
-  createUser(db, "merchant@example.com", "Merchant-password-123", "Merchant A")
-  createUser(db, "other@example.com", "Other-password-123", "Merchant B")
+  await createUser(
+    db,
+    "merchant@example.com",
+    "Merchant-password-123",
+    "Merchant A",
+  )
+  await createUser(db, "other@example.com", "Other-password-123", "Merchant B")
   const delivered = []
   const config = {
     appUrl: "http://localhost:8443",
@@ -75,7 +78,10 @@ test("real HTTP workflow, authorization, mail outbox and persistent QR", async (
     return { cookie: response.cookie.split(";")[0], csrf: response.value.csrf }
   }
   const owner = await login("merchant@example.com", "Merchant-password-123")
-  assert.equal((await request("/api/subscription", { packageId: "plus" }, owner)).status, 200)
+  assert.equal(
+    (await request("/api/subscription", { packageId: "plus" }, owner)).status,
+    200,
+  )
   const operator = await login("admin@example.com", "Admin-password-123")
   const other = await login("other@example.com", "Other-password-123")
   const file = {
@@ -242,13 +248,22 @@ test("real HTTP workflow, authorization, mail outbox and persistent QR", async (
         ),
       ])
       assert.deepEqual(results.map((r) => r.status).sort(), [200, 409])
-      assert.equal(db.prepare("SELECT count(*) AS n FROM invoices").get().n, 1)
-      assert.equal(db.prepare("SELECT count(*) AS n FROM mails").get().n, 1)
+      assert.equal(
+        (await db.prepare("SELECT count(*) AS n FROM invoices").get()).n,
+        1,
+      )
+      assert.equal(
+        (await db.prepare("SELECT count(*) AS n FROM mails").get()).n,
+        1,
+      )
       // SMTP worker completes asynchronously; yield to the same event loop.
       await new Promise((resolve) => setTimeout(resolve, 20))
       assert.equal(delivered.length, 1)
       assert.equal(delivered[0].to, "merchant@example.com")
-      assert.equal(db.prepare("SELECT status FROM mails").get().status, "sent")
+      assert.equal(
+        (await db.prepare("SELECT status FROM mails").get()).status,
+        "sent",
+      )
     },
   )
   await t.test(
@@ -300,7 +315,7 @@ test("real HTTP workflow, authorization, mail outbox and persistent QR", async (
       qr = current.qr
       assert.ok(qr.startsWith("VC-"))
       assert.equal(current.payments, 1)
-      const paid = db
+      const paid = await db
         .prepare("SELECT paid_at,confirmed_by FROM invoices WHERE id=?")
         .get(invoice.id)
       assert.equal(paid.confirmed_by, admin.id)
@@ -349,35 +364,98 @@ test("real HTTP workflow, authorization, mail outbox and persistent QR", async (
       )
     },
   )
-  await t.test("second villa gets its own QR under the already paid merchant package", async () => {
-    const created = await request("/api/villas", { ...input, name: "Villa B" }, owner);
-    assert.equal(created.status, 201);
-    const id = created.value.createdId;
-    await request(`/api/villas/${id}/review`, { status: "changes", reason: "Need new document" }, operator);
-    assert.equal((await request(`/api/villas/${id}/resubmit`, { document: file }, other)).status, 404);
-    assert.equal((await request(`/api/villas/${id}/resubmit`, { document: file }, owner)).status, 200);
-    const before = db.prepare("SELECT count(*) AS n FROM invoices").get().n;
-    const approved = await request(`/api/villas/${id}/review`, { status: "approved" }, operator);
-    const second = approved.value.villas.find(v => v.id === id);
-    assert.ok(second.qr); assert.notEqual(second.qr, qr);
-    assert.equal(db.prepare("SELECT count(*) AS n FROM invoices").get().n, before);
-    assert.equal((await request("/api/villas", { ...input, name: "Villa C" }, owner)).status, 409);
-    await request(`/api/villas/${villaId}/renew`, {}, owner);
-    const invoice = (await request("/api/state", undefined, owner)).value.villas.find(v => v.id === villaId).invoices.find(i => i.status === "pending");
-    await request(`/api/invoices/${invoice.id}/proof`, { document: file, reference: "TRANSFER3" }, owner);
-    assert.equal((await request(`/api/invoices/${invoice.id}/reject`, { reason: "Amount does not match" }, operator)).status, 200);
-    const v = (await request("/api/state", undefined, owner)).value.villas.find(v => v.id === villaId);
-    assert.equal(v.invoices.find(i => i.id === invoice.id).status, "pending");
-    await request(`/api/invoices/${invoice.id}/proof`, { document: file, reference: "TRANSFER3-RESUBMIT" }, owner);
-    await request(`/api/invoices/${invoice.id}/confirm`, {}, operator);
-  });
+  await t.test(
+    "second villa gets its own QR under the already paid merchant package",
+    async () => {
+      const created = await request(
+        "/api/villas",
+        { ...input, name: "Villa B" },
+        owner,
+      )
+      assert.equal(created.status, 201)
+      const id = created.value.createdId
+      await request(
+        `/api/villas/${id}/review`,
+        { status: "changes", reason: "Need new document" },
+        operator,
+      )
+      assert.equal(
+        (await request(`/api/villas/${id}/resubmit`, { document: file }, other))
+          .status,
+        404,
+      )
+      assert.equal(
+        (await request(`/api/villas/${id}/resubmit`, { document: file }, owner))
+          .status,
+        200,
+      )
+      const before = (
+        await db.prepare("SELECT count(*) AS n FROM invoices").get()
+      ).n
+      const approved = await request(
+        `/api/villas/${id}/review`,
+        { status: "approved" },
+        operator,
+      )
+      const second = approved.value.villas.find((v) => v.id === id)
+      assert.ok(second.qr)
+      assert.notEqual(second.qr, qr)
+      assert.equal(
+        (await db.prepare("SELECT count(*) AS n FROM invoices").get()).n,
+        before,
+      )
+      assert.equal(
+        (await request("/api/villas", { ...input, name: "Villa C" }, owner))
+          .status,
+        409,
+      )
+      await request(`/api/villas/${villaId}/renew`, {}, owner)
+      const invoice = (
+        await request("/api/state", undefined, owner)
+      ).value.villas
+        .find((v) => v.id === villaId)
+        .invoices.find((i) => i.status === "pending")
+      await request(
+        `/api/invoices/${invoice.id}/proof`,
+        { document: file, reference: "TRANSFER3" },
+        owner,
+      )
+      assert.equal(
+        (
+          await request(
+            `/api/invoices/${invoice.id}/reject`,
+            { reason: "Amount does not match" },
+            operator,
+          )
+        ).status,
+        200,
+      )
+      const v = (
+        await request("/api/state", undefined, owner)
+      ).value.villas.find((v) => v.id === villaId)
+      assert.equal(
+        v.invoices.find((i) => i.id === invoice.id).status,
+        "pending",
+      )
+      await request(
+        `/api/invoices/${invoice.id}/proof`,
+        { document: file, reference: "TRANSFER3-RESUBMIT" },
+        owner,
+      )
+      await request(`/api/invoices/${invoice.id}/confirm`, {}, operator)
+    },
+  )
   await t.test(
     "expired QR is unavailable and renewal starts from current time",
     async () => {
-      db.exec("UPDATE subscriptions SET expires='2020-01-01T00:00:00.000Z'")
-      db.prepare(
-        "UPDATE villas SET expires='2020-01-01T00:00:00.000Z' WHERE id=?",
-      ).run(villaId)
+      await db.exec(
+        "UPDATE subscriptions SET expires='2020-01-01T00:00:00.000Z'",
+      )
+      await db
+        .prepare(
+          "UPDATE villas SET expires='2020-01-01T00:00:00.000Z' WHERE id=?",
+        )
+        .run(villaId)
       assert.equal((await request(`/api/public/qr/${qr}`)).value.valid, false)
       await request(`/api/villas/${villaId}/renew`, {}, owner)
       const v = (
@@ -394,7 +472,7 @@ test("real HTTP workflow, authorization, mail outbox and persistent QR", async (
         {},
         operator,
       )
-      const paid = db
+      const paid = await db
         .prepare("SELECT paid_at FROM invoices WHERE id=?")
         .get(invoice.id)
       assert.equal(
@@ -407,7 +485,7 @@ test("real HTTP workflow, authorization, mail outbox and persistent QR", async (
     "SQLite data, sessions, documents and public verification survive restart",
     async () => {
       await new Promise((resolve) => server.close(resolve))
-      db.close()
+      await db.close()
       db = openDatabase(join(folder, "test.sqlite"))
       server = createApp(db, config)
       await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve))
@@ -431,33 +509,35 @@ test("real HTTP workflow, authorization, mail outbox and persistent QR", async (
     },
   )
   await new Promise((resolve) => server.close(resolve))
-  db.close()
+  await db.close()
   rmSync(folder, { recursive: true, force: true })
 })
-
 test("SMTP failure remains visible and can be retried", async () => {
   const db = openDatabase(":memory:")
-  const user = createUser(
+  const user = await createUser(
     db,
     "merchant@example.com",
     "Merchant-password",
     "Merchant",
   )
-  db.prepare("INSERT INTO documents VALUES ('doc',?,?,?,?)").run(
-    user.id,
-    "file.pdf",
-    "application/pdf",
-    Buffer.from("%PDF-"),
-  )
-  db.prepare(
-    "INSERT INTO villas(id,owner_id,name,province,merchant,email,package_id,document_id,created) VALUES ('villa',?,'Villa','Bangkok','Merchant','merchant@example.com','starter','doc','now')",
-  ).run(user.id)
-  db.prepare(
-    "INSERT INTO invoices(id,villa_id,amount,months,created) VALUES ('invoice','villa',99000,3,'now')",
-  ).run()
-  db.prepare(
-    "INSERT INTO mails(id,villa_id,invoice_id,recipient,subject,body,created) VALUES ('mail','villa','invoice','merchant@example.com','subject','body','now')",
-  ).run()
+  await db
+    .prepare("INSERT INTO documents VALUES ('doc',?,?,?,?)")
+    .run(user.id, "file.pdf", "application/pdf", Buffer.from("%PDF-"))
+  await db
+    .prepare(
+      "INSERT INTO villas(id,owner_id,name,province,merchant,email,package_id,document_id,created) VALUES ('villa',?,'Villa','Bangkok','Merchant','merchant@example.com','starter','doc','now')",
+    )
+    .run(user.id)
+  await db
+    .prepare(
+      "INSERT INTO invoices(id,villa_id,amount,months,created) VALUES ('invoice','villa',99000,3,'now')",
+    )
+    .run()
+  await db
+    .prepare(
+      "INSERT INTO mails(id,villa_id,invoice_id,recipient,subject,body,created) VALUES ('mail','villa','invoice','merchant@example.com','subject','body','now')",
+    )
+    .run()
   const { createMailWorker } = await import("./mail.mjs")
   const worker = createMailWorker(db, { smtpFrom: "sender@example.com" }, {
     sendMail: async () => {
@@ -467,11 +547,11 @@ test("SMTP failure remains visible and can be retried", async () => {
     },
   })
   await new Promise((resolve) => setTimeout(resolve, 20))
-  const mail = db.prepare("SELECT * FROM mails").get()
+  const mail = await db.prepare("SELECT * FROM mails").get()
   assert.equal(mail.status, "failed")
   assert.equal(mail.attempts, 1)
   assert.ok(mail.next_attempt > Date.now())
   assert.ok(!mail.last_error.includes("secret"))
   worker.stop()
-  db.close()
+  await db.close()
 })
