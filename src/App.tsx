@@ -136,7 +136,7 @@ function VillaCard({ villa, onClick }: { villa: typeof villas[0]; onClick: () =>
     <div className="card-image"><img src={villa.image} alt={`ภาพ ${villa.name}`} /><Badge pending={villa.status !== "ตรวจสอบข้อมูลแล้ว"}>{villa.status}</Badge></div>
     <div className="card-body">
       <h3>{villa.name}</h3>
-      <div className="villa-meta"><span><Icon name="pin" size={17} />{villa.province}</span><span><Icon name="users" size={17} />สูงสุด {villa.guests}</span></div>
+      <div className="villa-meta"><span><Icon name="pin" size={17} />{villa.province}</span>{villa.guests !== "ไม่ระบุ" && <span><Icon name="users" size={17} />สูงสุด {villa.guests}</span>}</div>
       <div className="card-foot"><span><Icon name="clock" size={15} />อัปเดตล่าสุด {villa.updated}</span><button aria-label={`ดู ${villa.name}`} onClick={event => { event.stopPropagation(); onClick(); }}><Icon name="arrow" size={18} /></button></div>
     </div>
   </article>;
@@ -164,8 +164,8 @@ function ShowcaseCard({ villa, featured = false, onClick }: { villa: typeof vill
 function VillaShowcase({ go }: { go: (p: Page, item?: string) => void }) {
   const [active, setActive] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
-  const [items,setItems]=useState<(typeof villas[number] & {qr:string;premiumBanner:boolean})[]>([]);
-  useEffect(()=>{let active=true;void api<{villas:{name:string;province:string;qr:string;qrStatus:string;photoUrl:string;updated:string;premiumBanner:boolean}[]}>("/public/villas").then(data=>{if(active)setItems(data.villas.slice(0,4).map(v=>({...v,guests:"ไม่ระบุ",status:v.qrStatus === "ACTIVE" ? "ตรวจสอบข้อมูลแล้ว" : "หมดอายุ",image:v.photoUrl || "/villa-placeholder.svg"})));}).catch(()=>{});return()=>{active=false;};},[]);
+  const [items,setItems]=useState<(typeof villas[number] & {qr:string;premiumBanner:boolean;createdAt:string})[]>([]);
+  useEffect(()=>{let active=true;void api<{villas:{name:string;province:string;qr:string;qrStatus:string;photoUrl:string;updated:string;premiumBanner:boolean}[]}>("/public/villas").then(data=>{if(active)setItems(data.villas.slice(0,4).map(v=>({...v,createdAt:v.updated,updated:new Date(v.updated).toLocaleDateString("th-TH",{day:"numeric",month:"short",year:"numeric",timeZone:"Asia/Bangkok"}),guests:"ไม่ระบุ",status:v.qrStatus === "ACTIVE" ? "ตรวจสอบข้อมูลแล้ว" : "หมดอายุ",image:v.photoUrl || "/villa-placeholder.svg"})));}).catch(()=>{});return()=>{active=false;};},[]);
   const scrollToSlide = (index: number) => {
     const next = Math.max(0, Math.min(items.length - 1, index));
     const element = trackRef.current?.children[next] as HTMLElement | undefined;
@@ -301,15 +301,15 @@ function Directory({ go, initialQuery = "", initialProvince = "" }: { go: (p: Pa
   const [status, setStatus] = useState("");
   const [guests, setGuests] = useState("");
   const [sort, setSort] = useState("ล่าสุด");
-  const [liveVillas,setLiveVillas]=useState<(typeof villas[number] & {qr:string;premiumBanner:boolean})[]>([]);
+  const [liveVillas,setLiveVillas]=useState<(typeof villas[number] & {qr:string;premiumBanner:boolean;createdAt:string})[]>([]);
   const [directoryError,setDirectoryError]=useState("");
-  useEffect(()=>{let active=true;void api<{villas:{name:string;province:string;qr:string;qrStatus:string;photoUrl:string;updated:string;premiumBanner:boolean}[]}>("/public/villas").then(data=>{if(active)setLiveVillas(data.villas.map(v=>({...v,guests:"ไม่ระบุ",status:v.qrStatus === "ACTIVE" ? "ตรวจสอบข้อมูลแล้ว" : "หมดอายุ",image:v.photoUrl || "/villa-placeholder.svg"})));}).catch(e=>{if(active)setDirectoryError(e.message);});return()=>{active=false;};},[]);
+  useEffect(()=>{let active=true;void api<{villas:{name:string;province:string;qr:string;qrStatus:string;photoUrl:string;updated:string;premiumBanner:boolean}[]}>("/public/villas").then(data=>{if(active)setLiveVillas(data.villas.map(v=>({...v,createdAt:v.updated,updated:new Date(v.updated).toLocaleDateString("th-TH",{day:"numeric",month:"short",year:"numeric",timeZone:"Asia/Bangkok"}),guests:"ไม่ระบุ",status:v.qrStatus === "ACTIVE" ? "ตรวจสอบข้อมูลแล้ว" : "หมดอายุ",image:v.photoUrl || "/villa-placeholder.svg"})));}).catch(e=>{if(active)setDirectoryError(e.message);});return()=>{active=false;};},[]);
   const filtered = [...liveVillas]
     .filter(v => v.name.toLowerCase().includes(query.toLowerCase()))
     .filter(v => !province || v.province === province)
     .filter(v => !status || v.status === status)
     .filter(v => !guests || (guests === "1–8 คน" ? Number.parseInt(v.guests) <= 8 : Number.parseInt(v.guests) >= 9))
-    .sort((a, b) => sort === "A–Z" ? a.name.localeCompare(b.name) : b.updated.localeCompare(a.updated));
+    .sort((a, b) => sort === "A–Z" ? a.name.localeCompare(b.name) : Date.parse(b.createdAt)-Date.parse(a.createdAt));
   return <main className="page-bg">
     <div className="page-hero container"><span className="kicker">VILLA DIRECTORY</span><h1>ค้นหาวิลล่าที่ไว้ใจได้</h1><p>ตรวจสอบข้อมูลและสถานะของพูลวิลล่าทั่วไทย ก่อนตัดสินใจโอนเงิน</p></div>
     <div className="container filter-panel">
