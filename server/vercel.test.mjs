@@ -41,7 +41,7 @@ test(
   async (t) => {
     const db = await openTestDatabase()
     const env = {
-      DATABASE_URL: db.testConnectionString,
+      VillaCheck_DATABASE_URL: db.testConnectionString,
       APP_URL: "https://design-villacheck.vercel.app",
       ADMIN_EMAIL: "admin-online@example.com",
       ADMIN_PASSWORD: "Online-admin-1234",

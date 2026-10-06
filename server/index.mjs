@@ -4,6 +4,7 @@ import { createApp } from "./app.mjs"
 import { createUser, hashPassword, openDatabase } from "./database.mjs"
 import { openPostgres } from "./postgres.mjs"
 export async function startServer(env = process.env, { listen = true } = {}) {
+  env = { ...env, DATABASE_URL: env.DATABASE_URL || env.VillaCheck_DATABASE_URL }
   const production = env.NODE_ENV === "production"
   const root = resolve(fileURLToPath(new URL("..", import.meta.url)))
   const appUrl = (env.APP_URL || "http://localhost:8443").replace(/\/$/, "")

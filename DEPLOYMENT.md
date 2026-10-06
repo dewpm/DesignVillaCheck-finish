@@ -6,7 +6,7 @@ The website and API run together on https://design-villacheck.vercel.app. `api/i
 
 In Vercel, open the `design-villacheck` project → Storage → Create Database → Neon / PostgreSQL. Review the provider's plan before creating the database and connect it to this project. Use a separate database/branch for preview deployments if enabled.
 
-The Backend reads `DATABASE_URL`. If the integration adds another name such as `POSTGRES_URL`, copy its PostgreSQL pooled connection URL to a new `DATABASE_URL` environment variable. Use the provider's TLS-enabled connection URL. Do not paste it into frontend code or commit it.
+The Backend reads `DATABASE_URL`, or `VillaCheck_DATABASE_URL` when the Neon integration uses the VillaCheck prefix. If the integration adds another name such as `POSTGRES_URL`, copy its PostgreSQL pooled connection URL to a new `DATABASE_URL` environment variable. Use the provider's TLS-enabled connection URL. Do not paste it into frontend code or commit it.
 
 ## 2. Configure the production Backend
 
