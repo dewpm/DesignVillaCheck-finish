@@ -32,6 +32,25 @@ Build generates Prisma Client, compiles Nest, then runs the safe migration scrip
 
 Use `NEXT_PUBLIC_SUPPORT_EMAIL`, `NEXT_PUBLIC_SUPPORT_PHONE`, `NEXT_PUBLIC_FACEBOOK_URL`, `NEXT_PUBLIC_INSTAGRAM_URL` for public contact values. Existing VITE_* contact values are explicitly mapped in next.config.mjs for deployment compatibility. Never put SMTP passwords, database URLs or OAuth secrets into NEXT_PUBLIC_. Existing private environment variable names and OAuth callback paths are unchanged.
 
+### Prisma P1002 during the Vercel build
+
+`Timed out trying to acquire a postgres advisory lock` means the database was reached, but another session holds the migration lock. Prisma waits 10 seconds per attempt. The deployment script retries only this error, up to 12 attempts with 5 seconds between attempts (about 3 minutes). Set `MIGRATION_LOCK_MAX_ATTEMPTS` to an integer from 1 to 60 to change the retry count. Other migration errors fail immediately; locking stays enabled.
+
+Set `DIRECT_URL` in the appropriate Vercel environment to the provider's direct, non-pooled PostgreSQL URL. The runtime can keep its pooled `DATABASE_URL`. The script also supports `DATABASE_URL_UNPOOLED`, `VillaCheck_DATABASE_URL_UNPOOLED`, and `VillaCheck_POSTGRES_URL_NON_POOLING`, and removes Neon's `-pooler` hostname suffix as a fallback. Redeploy after changing environment variables, and cancel redundant deployments targeting the same database.
+
+If the lock persists, run this read-only query in the database provider's SQL console to identify its holder:
+
+```sql
+SELECT a.pid, a.application_name, a.state, a.query_start, a.query
+FROM pg_locks AS l
+JOIN pg_stat_activity AS a ON a.pid = l.pid
+WHERE l.locktype = 'advisory' AND l.classid = 0
+  AND l.objid = 72707369 AND l.objsubid = 1 AND l.granted
+  AND a.datname = current_database();
+```
+
+Let an active migration finish. If the holder is a confirmed abandoned deployment session, a database administrator can terminate that specific session before retrying. Do not terminate all database connections or disable Prisma advisory locking to bypass contention. The script does not force-release locks or reset the database.
+
 ## Migration files and checks
 
 New runtime files: `app/layout.tsx`, `app/page.tsx`, `pages/api/[...route].ts`, `backend/app.module.ts`, `backend/bootstrap.ts`, `backend/main.ts`, `backend/domain.service.ts`, `backend/prisma.service.ts`, `backend/package.service.ts`, `prisma.config.ts`, `prisma/schema.prisma`, `prisma/migrations/*`, `next.config.mjs`, `postcss.config.mjs`, `tsconfig.backend.json`, `eslint.config.mjs`, `scripts/dev.mjs`, `scripts/build-backend.mjs`, `scripts/deploy-db.mjs` and Nest/Next integration tests.
