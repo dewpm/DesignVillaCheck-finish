@@ -202,8 +202,11 @@ test("dynamic catalog, trial without invoice, leads, settings, payment QR expiry
       assert.equal(state.villas[0].invoices.length, 0)
       assert.equal(state.subscription.status, "ACTIVE")
       assert.ok(state.villas[0].qr)
-      assert.equal(state.villas[0].premiumBanner, true)
+      assert.equal(state.villas[0].premiumBanner, false)
       assert.equal(state.villas[0].verificationLevel, "VERIFIED")
+    assert.equal((await request(`/api/villas/${id}/verification-level`,{verificationLevel:"PREMIUM_VERIFIED"},m)).status,403)
+    assert.equal((await request(`/api/villas/${id}/verification-level`,{verificationLevel:"PREMIUM_VERIFIED"},a)).status,200)
+    assert.equal((await request("/api/state",undefined,m)).value.villas[0].premiumBanner,true)
     },
   )
   const original = state.villas[0].qr

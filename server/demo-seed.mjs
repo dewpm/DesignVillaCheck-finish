@@ -30,6 +30,8 @@ export async function seedDemo(db,{password,adminEmail,adminPassword}={}){
     .run(id,owner.id,name,province,'ธุรกิจสาธิต — ไม่ใช่ที่พักจริง',owner.email,doc,status,status==='approved'?`VC-DEMO-${id}`:null,expired?'2000-01-01T00:00:00.000Z':status==='approved'?expires:null,now,'0800000000','ธนาคารตัวอย่าง — ห้ามโอนเงินจริง','บัญชีสาธิต','0000000000','VERIFIED')
    await db.prepare("UPDATE villas SET photo_url=? WHERE id=? AND (photo_url='' OR photo_url=?)").run(`/demo/villas/villa-${index>=6?index-2:index%3+1}.jpg`,id,`/demo/villas/villa-${index%3+1}.jpg`)
   }
+  // Explicit simulated highest-level Admin results for two labelled demo records only.
+  for(const name of ['Sea Sky Demo Villa','Khao Yai Forest Demo Villa'])await db.prepare("UPDATE villas SET verification_level='PREMIUM_VERIFIED' WHERE id=? AND status='approved' AND merchant='ธุรกิจสาธิต — ไม่ใช่ที่พักจริง' AND reviewed_by IS NULL").run(uuid(name))
   // An expired subscription must be separate: QR status follows the account subscription.
   const expired=await add('demo-expired@villacheck.example','Merchant หมดอายุ','merchant')
   await db.prepare("INSERT INTO subscriptions(owner_id,package_id,expires,payments,created,lifecycle) VALUES (?,'starter','2000-01-01T00:00:00.000Z',1,?,'ACTIVE') ON CONFLICT(owner_id) DO NOTHING").run(expired.id,now)

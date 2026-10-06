@@ -1,3 +1,4 @@
+import PremiumBanner from "./PremiumBanner";
 import PaymentQr from "./PaymentQr";
 import { planId } from "./packagePlans";
 import SubscriptionPanel from "./SubscriptionPanel";
@@ -41,7 +42,7 @@ export function VillaQr({ villa }: { villa: MerchantVilla }) {
   return (
     <div className="merchant-qr">
       <div ref={qrRef} />
-      <strong>{villa.qr}</strong><p>{villa.qrStatus} · {villa.verificationLevel}</p>{villa.premiumBanner && <strong>Premium Merchant</strong>}
+      <strong>{villa.qr}</strong><p>{villa.qrStatus} · {villa.verificationLevel}</p>{villa.premiumBanner && <PremiumBanner />}
       <small>หมดอายุ {date(villa.expires)}</small>
       <a href={url}>เปิดหน้าตรวจสอบ ↗</a>
     </div>
@@ -248,6 +249,7 @@ export default function Backoffice({
       (filter === "all" || v.status === filter),
   )
   const showDetails = (v: MerchantVilla) => {
+    setVerificationLevel(v.status === "approved" ? v.verificationLevel : "VERIFIED")
     setSelected(v.id)
     setReason("")
     setUpload(null)
@@ -508,6 +510,7 @@ export default function Backoffice({
                     alt="เอกสารกรรมสิทธิ์ Villa"
                   />
                 )}
+                {admin && active.status === "approved" && <div className="portal-form"><label>ระดับ Verification ที่ Admin ตรวจจริง<select value={verificationLevel} onChange={e=>setVerificationLevel(e.target.value)}>{["REGISTERED","BASIC_CHECKED","VERIFIED","PREMIUM_VERIFIED"].map(x=><option key={x}>{x}</option>)}</select></label><button className="primary-button" disabled={busy} onClick={()=>void perform(`/villas/${active.id}/verification-level`,{verificationLevel},"บันทึกระดับ Verification แล้ว")}>บันทึกระดับที่ตรวจสอบแล้ว</button></div>}
                 {admin && active.status === "pending" && <label>ระดับที่ Admin ตรวจจริง<select value={verificationLevel} onChange={e=>setVerificationLevel(e.target.value)}>{["REGISTERED","BASIC_CHECKED","VERIFIED","PREMIUM_VERIFIED"].map(x=><option key={x}>{x}</option>)}</select></label>}
                 {admin && active.status === "pending" && (
                   <div className="portal-form">
@@ -702,7 +705,7 @@ export function MerchantVerification({
                 : "QR หมดอายุหรือไม่พร้อมใช้งาน"}
             </span>
             {villa.photoUrl && <img src={villa.photoUrl} alt={villa.name} style={{maxWidth:"100%",maxHeight:360}}/>}
-            <p>{villa.province} · {villa.merchantName} · {villa.verificationLevel} · {villa.qrStatus}</p>{villa.premiumBanner && <strong>Premium Merchant</strong>}
+            <p>{villa.province} · {villa.merchantName} · {villa.verificationLevel} · {villa.qrStatus}</p>{villa.premiumBanner && <PremiumBanner />}
             <a href={`https://www.google.com/maps/search/?${new URLSearchParams({api:"1",query:`${villa.name} ${villa.province}`})}`} target="_blank" rel="noopener noreferrer">ดูที่ตั้งบน Google Maps</a>
             <p>วันหมดอายุ: {date(villa.expires)}</p>
             <section className={`verification-contact ${villa.locked ? "locked" : ""}`}>

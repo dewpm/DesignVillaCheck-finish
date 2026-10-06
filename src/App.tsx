@@ -1,3 +1,4 @@
+import PremiumBanner from "./PremiumBanner";
 import MerchantProfile from "./MerchantProfile";
 import AdminBusiness from "./AdminBusiness";
 import { usePackages, selectedPlanKey, packageIntentKey } from "./packagePlans";
@@ -152,10 +153,11 @@ function SearchBox({ onSearch }: { onSearch: (query: string, province: string) =
   </div>;
 }
 
-function ShowcaseCard({ villa, featured = false, onClick }: { villa: typeof villas[0]; featured?: boolean; onClick: () => void }) {
+function ShowcaseCard({ villa, featured = false, onClick }: { villa: typeof villas[0] & {premiumBanner?:boolean}; featured?: boolean; onClick: () => void }) {
   return <article className={`showcase-card ${featured ? "featured" : ""}`} onClick={onClick}>
     <img src={villa.image} alt={`ภาพ ${villa.name}`} />
     <div className="showcase-overlay" />
+    {villa.premiumBanner && <div className="showcase-premium"><PremiumBanner compact /></div>}
     <div className="showcase-status"><Icon name={villa.status === "ตรวจสอบข้อมูลแล้ว" ? "shield" : "clock"} size={14} />{villa.status === "ตรวจสอบข้อมูลแล้ว" ? "VillaCheck VERIFIED" : villa.status}</div>
     <div className="showcase-copy"><span><Icon name="pin" size={14} />{villa.province}</span><h3>{villa.name}</h3><div><small>Last checked</small><strong>{villa.updated}</strong><button aria-label={`ดู Trust Profile ของ ${villa.name}`} onClick={event => { event.stopPropagation(); onClick(); }}><Icon name="arrow" size={18} /></button></div></div>
   </article>;
@@ -321,7 +323,7 @@ function Directory({ go, initialQuery = "", initialProvince = "" }: { go: (p: Pa
     </div>
     <section className="container directory-results">
       <div className="results-head"><div><h2>Villa ที่ผ่านการตรวจสอบ</h2><p>แสดง {filtered.length} รายการ</p>{directoryError&&<p role="alert">{directoryError}</p>}</div><select aria-label="เรียงลำดับ" value={sort} onChange={event => setSort(event.target.value)}><option value="ล่าสุด">อัปเดตล่าสุด</option><option>A–Z</option></select></div>
-      {filtered.length ? <div className="villa-grid directory-grid">{filtered.map(v => <div key={v.qr}>{v.premiumBanner&&<strong>Premium Merchant</strong>}<VillaCard villa={v} onClick={() => go("verify", v.qr)} /></div>)}</div> : <div className="empty-results"><strong>ไม่พบ Villa ที่ตรงกับการค้นหา</strong><p>ลองเปลี่ยนคำค้นหาหรือจังหวัด</p><button className="outline-button" onClick={() => { setQuery(""); setProvince(""); setStatus(""); setGuests(""); }}>ล้างตัวกรอง</button></div>}
+      {filtered.length ? <div className="villa-grid directory-grid">{filtered.map(v => <div key={v.qr}>{v.premiumBanner&&<PremiumBanner compact />}<VillaCard villa={v} onClick={() => go("verify", v.qr)} /></div>)}</div> : <div className="empty-results"><strong>ไม่พบ Villa ที่ตรงกับการค้นหา</strong><p>ลองเปลี่ยนคำค้นหาหรือจังหวัด</p><button className="outline-button" onClick={() => { setQuery(""); setProvince(""); setStatus(""); setGuests(""); }}>ล้างตัวกรอง</button></div>}
     </section>
   </main>;
 }

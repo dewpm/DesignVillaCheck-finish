@@ -105,7 +105,9 @@ export async function trustDto(db, villa) {
     premiumBanner:
       qrStatus === "ACTIVE" &&
       villa.status === "approved" &&
-      Boolean(plan.banner),
+      Boolean(plan.banner) &&
+      plan.max_level === "PREMIUM_VERIFIED" &&
+      actual === "PREMIUM_VERIFIED",
     merchantName: villa.merchant,
     packageName: plan.name,
   }

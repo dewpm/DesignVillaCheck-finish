@@ -639,6 +639,21 @@ export function createApp(db, config, transport) {
         }
         if (!["merchant", "admin"].includes(user.role))
           fail(403, "เฉพาะ Merchant หรือ Admin")
+        const assignLevel=path.match(/^\/api\/villas\/([a-f0-9-]+)\/verification-level$/)
+        if(req.method === "POST" && assignLevel) {
+          if(user.role!=="admin")fail(403,"เฉพาะ Admin")
+          const data=await body(req)
+          await db.transaction(async()=>{
+            const villa=await villaFor(user,assignLevel[1])
+            const sub=await getSubscription(db,villa.owner_id)
+            const plan=await getPlan(db,sub?.package_id || villa.package_id)
+            if(villa.status!=="approved")fail(409,"เอกสารต้องผ่านการอนุมัติก่อน")
+            if(!levels.includes(data.verificationLevel) || levels.indexOf(data.verificationLevel)>levels.indexOf(plan.max_level))fail(400,"ระดับเกินสิทธิ์แพ็กเกจ")
+            await db.prepare("UPDATE villas SET verification_level=?,reviewed_at=?,reviewed_by=? WHERE id=?").run(data.verificationLevel,new Date().toISOString(),user.id,villa.id)
+            await audit(db,user,"villa.verification-level",villa.id)
+          })
+          return json(await state(user))
+        }
         const regenerate = path.match(/^\/api\/payments\/([a-f0-9-]+)\/qr$/)
         if (req.method === "POST" && regenerate) {
           if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
