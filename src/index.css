@@ -1033,3 +1033,12 @@ footer { background: var(--ocean); color: white; padding: 72px 0 24px; }
 .showcase-premium {position:absolute;left:16px;right:16px;bottom:140px;z-index:2;}
 .showcase-premium .premium-merchant-banner.compact {border-radius:12px;}
 @media(max-width:600px){.premium-merchant-banner{padding:17px;gap:12px}.premium-merchant-banner strong{font-size:18px}.premium-merchant-banner.compact strong{font-size:13px}}
+
+.premium-promo-wrap {padding-top:32px;padding-bottom:32px;}
+.premium-package-promo {padding:32px;gap:24px;flex-wrap:wrap;}
+.premium-promo-copy {flex:1;min-width:240px;}
+.premium-package-promo h2 {margin:8px 0;font-size:clamp(22px,3vw,32px);color:#fff;}
+.premium-package-promo ul {display:flex;flex-wrap:wrap;gap:12px 24px;padding:0;list-style:none;margin:16px 0;color:#f5d693;}
+.premium-package-promo li::before {content:'✓ ';}
+.premium-package-promo .premium-promo-note {font-size:12px;color:#c9d6e8;}
+@media(max-width:640px){.premium-package-promo{padding:24px;}.premium-package-promo .white-button{width:100%;}}

@@ -157,7 +157,7 @@ function ShowcaseCard({ villa, featured = false, onClick }: { villa: typeof vill
   return <article className={`showcase-card ${featured ? "featured" : ""}`} onClick={onClick}>
     <img src={villa.image} alt={`ภาพ ${villa.name}`} />
     <div className="showcase-overlay" />
-    {villa.premiumBanner && <div className="showcase-premium"><PremiumBanner compact /></div>}
+
     <div className="showcase-status"><Icon name={villa.status === "ตรวจสอบข้อมูลแล้ว" ? "shield" : "clock"} size={14} />{villa.status === "ตรวจสอบข้อมูลแล้ว" ? "VillaCheck VERIFIED" : villa.status}</div>
     <div className="showcase-copy"><span><Icon name="pin" size={14} />{villa.province}</span><h3>{villa.name}</h3><div><small>Last checked</small><strong>{villa.updated}</strong><button aria-label={`ดู Trust Profile ของ ${villa.name}`} onClick={event => { event.stopPropagation(); onClick(); }}><Icon name="arrow" size={18} /></button></div></div>
   </article>;
@@ -242,6 +242,7 @@ function Home({ go, onSearch }: { go: (p: Page, item?: string) => void; onSearch
         <button onClick={() => go("scan")}><span>SCAN / VERIFY</span><Icon name="arrow" size={17} /></button>
       </div>
     </section>
+    <div className="container premium-promo-wrap"><PremiumBanner onSelect={() => go("pricing")} /></div>
 
     <section className="section how-section" id="how">
       <div className="container">
@@ -323,7 +324,7 @@ function Directory({ go, initialQuery = "", initialProvince = "" }: { go: (p: Pa
     </div>
     <section className="container directory-results">
       <div className="results-head"><div><h2>Villa ที่ผ่านการตรวจสอบ</h2><p>แสดง {filtered.length} รายการ</p>{directoryError&&<p role="alert">{directoryError}</p>}</div><select aria-label="เรียงลำดับ" value={sort} onChange={event => setSort(event.target.value)}><option value="ล่าสุด">อัปเดตล่าสุด</option><option>A–Z</option></select></div>
-      {filtered.length ? <div className="villa-grid directory-grid">{filtered.map(v => <div key={v.qr}>{v.premiumBanner&&<PremiumBanner compact />}<VillaCard villa={v} onClick={() => go("verify", v.qr)} /></div>)}</div> : <div className="empty-results"><strong>ไม่พบ Villa ที่ตรงกับการค้นหา</strong><p>ลองเปลี่ยนคำค้นหาหรือจังหวัด</p><button className="outline-button" onClick={() => { setQuery(""); setProvince(""); setStatus(""); setGuests(""); }}>ล้างตัวกรอง</button></div>}
+      {filtered.length ? <div className="villa-grid directory-grid">{filtered.map(v => <div key={v.qr}><VillaCard villa={v} onClick={() => go("verify", v.qr)} /></div>)}</div> : <div className="empty-results"><strong>ไม่พบ Villa ที่ตรงกับการค้นหา</strong><p>ลองเปลี่ยนคำค้นหาหรือจังหวัด</p><button className="outline-button" onClick={() => { setQuery(""); setProvince(""); setStatus(""); setGuests(""); }}>ล้างตัวกรอง</button></div>}
     </section>
   </main>;
 }
@@ -594,6 +595,7 @@ function Pricing({ onSelect, go }: { onSelect: (name: string) => void; go: (page
   return <main className="page-bg pricing-page">
     <div className="page-hero container"><span className="kicker">PRICING FOR MERCHANTS</span><h1>แพ็กเกจที่เติบโตไปพร้อมธุรกิจคุณ</h1><p>สมัครแพ็กเกจที่บัญชี Merchant แล้วเพิ่ม Villa ตามจำนวนสิทธิ์<br />1 Villa = 1 QR · ตรวจเอกสารโดย Admin ก่อนเปิดใช้งาน</p></div>
     {error && <p role="alert" className="container">{error}</p>}
+    <div className="container premium-promo-wrap"><PremiumBanner onSelect={() => { const premium = plans.find(p => p.maximumVerificationLevel === "PREMIUM_VERIFIED"); if (premium) onSelect(premium.id); }} /></div>
     <div className="container plan-grid">
       {plans.map(plan => <article className={`plan-card ${plan.showPremiumBanner ? "recommended" : ""}`} key={plan.name}>
         {plan.showPremiumBanner && <div className="recommended-label">แนะนำสำหรับคุณ</div>}

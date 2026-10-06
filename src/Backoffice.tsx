@@ -1,4 +1,3 @@
-import PremiumBanner from "./PremiumBanner";
 import PaymentQr from "./PaymentQr";
 import { planId } from "./packagePlans";
 import SubscriptionPanel from "./SubscriptionPanel";
@@ -42,7 +41,7 @@ export function VillaQr({ villa }: { villa: MerchantVilla }) {
   return (
     <div className="merchant-qr">
       <div ref={qrRef} />
-      <strong>{villa.qr}</strong><p>{villa.qrStatus} · {villa.verificationLevel}</p>{villa.premiumBanner && <PremiumBanner />}
+      <strong>{villa.qr}</strong><p>{villa.qrStatus} · {villa.verificationLevel}</p>
       <small>หมดอายุ {date(villa.expires)}</small>
       <a href={url}>เปิดหน้าตรวจสอบ ↗</a>
     </div>
@@ -705,7 +704,7 @@ export function MerchantVerification({
                 : "QR หมดอายุหรือไม่พร้อมใช้งาน"}
             </span>
             {villa.photoUrl && <img src={villa.photoUrl} alt={villa.name} style={{maxWidth:"100%",maxHeight:360}}/>}
-            <p>{villa.province} · {villa.merchantName} · {villa.verificationLevel} · {villa.qrStatus}</p>{villa.premiumBanner && <PremiumBanner />}
+            <p>{villa.province} · {villa.merchantName} · {villa.verificationLevel} · {villa.qrStatus}</p>
             <a href={`https://www.google.com/maps/search/?${new URLSearchParams({api:"1",query:`${villa.name} ${villa.province}`})}`} target="_blank" rel="noopener noreferrer">ดูที่ตั้งบน Google Maps</a>
             <p>วันหมดอายุ: {date(villa.expires)}</p>
             <section className={`verification-contact ${villa.locked ? "locked" : ""}`}>
