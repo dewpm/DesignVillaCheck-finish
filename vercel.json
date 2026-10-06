@@ -3,7 +3,7 @@
   "installCommand": "npm ci",
   "buildCommand": "npm run build",
   "functions": {
-    "pages/api/[...route].ts": {
+    "pages/api/**/*.ts": {
       "maxDuration": 60
     }
   },
@@ -17,5 +17,6 @@
         }
       ]
     }
-  ]
+  ],
+  "outputDirectory": ".next"
 }
