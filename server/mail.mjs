@@ -1,8 +1,8 @@
+import {demoMode} from "./demo-payment.mjs"
 import { qrSvg, paymentQrDto } from "./payment-qr.mjs"
 export function createMailWorker(db, config, transport) {
   let active
   function run() {
-    if (!transport) return Promise.resolve()
     if (!active)
       active = drain().finally(() => {
         active = undefined
@@ -10,6 +10,8 @@ export function createMailWorker(db, config, transport) {
     return active
   }
   async function drain() {
+    const demo=await demoMode(db,config)
+    if(!transport && !demo)return
     // Delivery leases allow retry after an interrupted function invocation.
     for (let i = 0; i < (config.serverless ? 1 : 10); i++) {
       const now = Date.now()
@@ -20,6 +22,10 @@ export function createMailWorker(db, config, transport) {
       )
       if (!mail) break
       try {
+        if(demo || /\.example$/.test(mail.recipient)){
+          await db.prepare("UPDATE mails SET status='demo',sent_at=?,last_error='' WHERE id=?").run(new Date().toISOString(),mail.id)
+          continue
+        }
         const qr = await paymentQrDto(db, mail.invoice_id)
         await transport.sendMail({
           attachments: qr?.payload

@@ -266,3 +266,40 @@ Set server-only `LINE_CHANNEL_ID` and `LINE_CHANNEL_SECRET` in Vercel Production
 Publish the LINE Login channel for users outside its developer/tester roles and redeploy Vercel after adding environment variables. The LINE button stays disabled until both settings exist. The backend verifies the ID token through LINE, including the expected channel, nonce and expiration, and creates only User accounts. Provider credentials and access tokens are never returned to the browser.
 
 Official setup: https://developers.line.biz/en/docs/line-login/integrate-line-login/
+
+## Completed dummy workflows and replacing sample data
+
+Migration `0003_operational_records` adds persisted `support_reports`, `user_checks` and `villa_events`; it preserves existing users, invoices and Villa QR identities. The seed now provides 14 Villas (10 initially public), User Checks, Reports in three review states, seven days of statistics, and two pending document-review scenarios:
+
+- `demo-payment@villacheck.example`: a paid Starter package, document approval → invoice → 3-hour payment-page QR → dummy PDF slip → Admin manual approval.
+- `demo-trial@villacheck.example`: Basic trial, document approval → configured trial activation without an invoice.
+
+Local passwords are stored only in ignored `server/data/demo-accounts.json`; seeded public accounts do not have public passwords or demo Admin access. You can also register ordinary User/Merchant accounts with your own credentials to test. Dummy records are visibly labelled and seeding is idempotent; rerunning it does not reset reviewed records, passwords or QR identities.
+
+Admin System Settings controls Demo Mode and Auto Payment Verification. In Demo Mode, the Merchant can generate and submit a synthetic PDF slip. This is a simulated payment request, not a real bank QR or a bank-confirmed transfer. Backend QR expiry is still enforced. The normal upload, rejection, resubmission, duplicate reference protection, transaction, subscription activation and immutable Villa QR workflows all run normally. Email delivery is stored as `demo` in the outbox, with no SMTP transmission. Addresses ending in `.example` are always blocked from real delivery.
+
+Auto verification remains the explicitly requested placeholder; failure/unconfigured AUTO sends payments to manual review. A real bank QR with bank-side expiry requires a bank/payment provider integration; replace the demo payment adapter when switching to actual money transfers.
+
+Additional API routes:
+
+- `POST /api/public/reports`: Guest report or CSRF-protected User-linked report.
+- `GET /api/reports`: reports belonging to the current account, with internal Admin notes hidden.
+- `GET /api/user/checks`, `POST /api/user/checks`: persisted comparison snapshots; idempotent requests; no manual QR input in the UI.
+- `POST /api/public/events`, `GET /api/merchant/analytics`: scoped profile/scan/contact statistics.
+- `GET /api/merchant/reports`: complaints for that Merchant's Villas; reporter contact and internal notes hidden.
+- `POST /api/merchant/villas/:id`: ownership-checked edit; returns documents to pending review while retaining the QR identity.
+- `GET /api/admin/checks`, `GET /api/admin/reports`, `POST /api/admin/reports/:id`: review and respond; separate internal/public notes.
+- `GET /api/admin/merchants`, `GET /api/admin/qr`, `POST /api/admin/qr/:villaId`: scoped management; suspension/inactivation/resumption follows backend document/subscription eligibility.
+- `POST /api/payments/:id/demo-slip`: Demo Mode only; requires Merchant ownership and an active, unexpired payment request; never marks a payment verified itself.
+
+Package billing cycles are MONTHLY, QUARTERLY and YEARLY. Price is the total per cycle. Renewals activate for 1, 3 or 12 months respectively. Existing first-payment monthly-package behavior (3 months) is retained for backward compatibility and the invoice explicitly shows its duration. Free trial duration remains package-configured.
+
+Before replacing dummy data with actual data:
+
+1. Set `SEED_PUBLIC_DEMO_DATA=false` on Vercel so deployment no longer adds samples.
+2. Keep demo data separately or archive only labelled dummy records after backing up; never reset the production database or regenerate Villa QR values.
+3. Enter actual Merchant/Villa data through the ownership-checked forms and have Admin review documents.
+4. Configure the real payment recipient/provider and SMTP, complete Google/Facebook/LINE provider settings, then switch off Demo Mode in Admin System Settings.
+5. Review service/privacy text and contact details for your actual operating policy. Test live OAuth and a controlled payment/email with the provider before opening real payments.
+
+Checks and reports, including Admin responses, persist across browser reloads and sign-ins. Passing tests with dummy data does not validate bank or SMTP credentials, or third-party OAuth consent settings.

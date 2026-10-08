@@ -18,6 +18,6 @@ test("Prisma migrations baseline populated databases and preserve QR across repe
   }finally{await client.query('RESET search_path');client.release();}
   await deploy(schemas[1]);await deploy(schemas[1]);
   assert.equal((await pool.query(`SELECT qr FROM "${schemas[1]}".villas WHERE id='villa'`)).rows[0].qr,'VC-persistent');
-  assert.equal((await pool.query(`SELECT count(*) AS n FROM "${schemas[1]}"._prisma_migrations WHERE finished_at IS NOT NULL`)).rows[0].n,'2');
+  assert.equal((await pool.query(`SELECT count(*) AS n FROM "${schemas[1]}"._prisma_migrations WHERE finished_at IS NOT NULL`)).rows[0].n,'3');
  }finally{for(const schema of schemas)await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);await pool.end();}
 })

@@ -1,6 +1,8 @@
 import type { PaymentQrData } from "./PaymentQr";
 export type Document = { name: string; data: string; type: string }
 export type Invoice = {
+  packageName: string
+  updatedAt: string
   paymentQr: PaymentQrData | null
   scope: "merchant" | "villa"
   id: string
@@ -19,6 +21,7 @@ export type Invoice = {
 export type MerchantVilla = {
   id: string
   name: string
+  photoUrl: string
   province: string
   phone: string
   bankName: string
@@ -57,12 +60,13 @@ export type Account = {
   role: "merchant" | "admin" | "user"
 }
 export type Store = {
-  subscription: { packageId: string; name: string; amount: number; capacity: number; used: number; expires: string | null; active: boolean; status: string; renewalDate: string | null; payments: number } | null
+  subscription: { packageId: string; name: string; amount: number; billingCycle: string; billingMonths: number; capacity: number; used: number; expires: string | null; active: boolean; status: string; renewalDate: string | null; payments: number } | null
   villas: MerchantVilla[]
   mails: Mail[]
   user: Account
   paymentInstructions: string
   paymentConfigured: boolean
+  demoMode: boolean
   smtpConfigured: boolean
   createdId?: string
 }

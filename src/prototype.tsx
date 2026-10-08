@@ -1,7 +1,7 @@
 import ContactLead from "./ContactLead";
 import { usePackages, packageIntentKey } from "./packagePlans";
 import { SocialLogin } from "./UserAccounts";
-import { api, authenticate, logout, ApiError } from "./api";
+import { api, authenticate, currentAccount, logout, ApiError } from "./api";
 import { openSupport } from "./support";
 import { useEffect, useState } from "react";
 
@@ -23,7 +23,7 @@ export type Page =
 
 type Go = (page: Page, item?: string) => void;
 type Status = "Pending" | "Verified" | "Rejected" | "Suspended" | "Expired";
-export type UserReport = { reference: string; villa: string; type: string; guest: boolean };
+export type UserReport = { reference: string; villa: string; type: string; guest: boolean; qr?:string; detail?:string; reporter?:string; contact?:string };
 
 const publicInfo: Partial<Record<Page, { kicker: string; title: string; description: string; body: string }>> = {
   about: { kicker: "ABOUT VILLACHECK", title: "เกี่ยวกับ VillaCheck", description: "Trust before transfer.", body: "VillaCheck เป็น Prototype แพลตฟอร์มตรวจสอบข้อมูลที่พัก ช่องทางติดต่อ และบัญชีรับเงิน เพื่อช่วยให้ผู้ใช้งานมีข้อมูลประกอบการตัดสินใจก่อนโอน" },
@@ -31,8 +31,8 @@ const publicInfo: Partial<Record<Page, { kicker: string; title: string; descript
   "owner-guide": { kicker: "MERCHANT GUIDE", title: "คู่มือสำหรับเจ้าของที่พัก", description: "เริ่มต้นสร้าง Trust Profile ให้ Villa ของคุณ", body: "ศึกษาขั้นตอนลงทะเบียน เพิ่มข้อมูล Villa ส่งข้อมูลตรวจสอบ จัดการ QR และติดตามสถานะผ่าน Merchant Dashboard" },
   help: { kicker: "HELP / SUPPORT", title: "ศูนย์ช่วยเหลือ", description: "ค้นหาคำตอบและช่องทางรับความช่วยเหลือ", body: "ดูคำแนะนำเกี่ยวกับการค้นหาที่พัก การตรวจสอบก่อนโอน การสแกน QR การแจ้งปัญหา และการจัดการข้อมูลสำหรับเจ้าของที่พัก" },
   contact: { kicker: "CONTACT VILLACHECK", title: "ติดต่อเรา", description: "ทีมงานพร้อมช่วยเหลือในวันจันทร์–ศุกร์ เวลา 09:00–18:00 น.", body: "ข้อมูลติดต่อใน Prototype เป็นข้อมูลสาธิต ใช้ปุ่มติดต่อเมื่อเปิดใช้งานช่องทางจริงแล้ว" },
-  privacy: { kicker: "LEGAL", title: "นโยบายความเป็นส่วนตัว", description: "แนวทางการดูแลข้อมูลสำหรับ VillaCheck Prototype", body: "VillaCheck ใช้ข้อมูลที่จำเป็นต่อการสาธิตระบบเท่านั้น ข้อมูลทั้งหมดใน Prototype เป็นข้อมูลตัวอย่างและไม่มีการรับชำระเงินจริง" },
-  terms: { kicker: "LEGAL", title: "ข้อกำหนดและเงื่อนไข", description: "เงื่อนไขการใช้งาน VillaCheck Prototype", body: "สถานะการตรวจสอบเป็นข้อมูลประกอบการตัดสินใจ ผู้ใช้งานควรตรวจสอบชื่อบัญชีและข้อมูลการติดต่อทุกครั้งก่อนดำเนินการโอนเงิน" },
+  privacy: { kicker: "LEGAL", title: "นโยบายความเป็นส่วนตัว", description: "การใช้ข้อมูลบัญชีและข้อมูลการตรวจสอบที่พัก", body: "VillaCheck เก็บชื่อ อีเมล และตัวระบุบัญชีจากช่องทางที่คุณเลือกสมัคร เพื่อสร้างบัญชีและเข้าสู่ระบบ รวมถึงประวัติ Checks รายงานปัญหา เอกสาร Merchant และหลักฐานชำระเงิน เพื่อให้ Admin ตรวจสอบ ข้อมูลติดต่อและบัญชีของ Merchant แสดงตามสิทธิ์สมาชิก ไม่เผยเอกสารส่วนตัวต่อ Guest ข้อมูลที่ระบุ Demo เป็นข้อมูลสาธิต หากต้องการสอบถามหรือขอลบข้อมูล ติดต่อ villacheck69@gmail.com โดยระบุอีเมลบัญชี เราจะตรวจสอบความเป็นเจ้าของก่อนดำเนินการ รายการที่เกี่ยวกับธุรกรรมหรือข้อพิพาทอาจต้องเก็บไว้เท่าที่จำเป็น" },
+  terms: { kicker: "LEGAL", title: "ข้อกำหนดและเงื่อนไข", description: "เงื่อนไขการใช้ระบบตรวจสอบข้อมูลที่พัก", body: "VillaCheck ให้บริการตรวจสอบข้อมูลที่พัก ไม่รับจองและไม่รับเงินค่าที่พัก สถานะการตรวจสอบสะท้อนเอกสารที่ Admin ตรวจและอายุ Subscription ณ เวลาที่แสดง ไม่ใช่การรับประกันการจองหรือการปลอดภัยจากการฉ้อโกง Merchant ต้องมีสิทธิ์ในเอกสารและส่งข้อมูลที่ถูกต้อง ค่าบริการแพ็กเกจชำระหลังเอกสารผ่านและเปิดใช้หลัง Admin ยืนยันสลิป โปรดตรวจยอดและระยะเวลาในใบแจ้งชำระก่อนชำระ ข้อมูล Demo และ Payment ทดสอบใช้เพื่อทดสอบระบบเท่านั้น ห้ามโอนเงินจริง หากต้องการแก้ไขข้อมูลหรือสอบถามเกี่ยวกับค่าบริการ ติดต่อ villacheck69@gmail.com" },
   "social-facebook": { kicker: "SOCIAL MEDIA", title: "VillaCheck บน Facebook", description: "ติดตามข่าวสารและคำแนะนำก่อนโอน", body: "Prototype channel · VillaCheck Thailand" },
   "social-instagram": { kicker: "SOCIAL MEDIA", title: "VillaCheck บน Instagram", description: "Travel intelligence และ Verified Villa stories", body: "Prototype channel · @villacheck.th" },
   "social-line": { kicker: "SOCIAL MEDIA", title: "VillaCheck LINE Official", description: "ช่องทางอัปเดตและติดต่อทีมงาน", body: "Prototype channel · @villacheck" },
@@ -48,19 +48,25 @@ export function PublicInfoPage({ page, go, selectedArticle }: { page: Page; go: 
   return <main className="page-bg public-info-page"><div className="page-hero container"><span className="kicker">{info.kicker}</span><h1>{info.title}</h1><p>{info.description}</p></div><div className="container info-body"><p>{info.body}</p><div className="button-row"><button className="primary-button" onClick={() => page === "owner-guide" ? go("pricing") : page === "help" ? go("contact") : go("home")}>{page === "owner-guide" ? "ดูแพ็กเกจ" : page === "help" ? "ติดต่อทีมงาน" : "กลับหน้าหลัก"}</button>{page === "contact" && <ContactLead />}{page === "contact" && <button className="outline-button" onClick={() => openSupport("email")}>ส่งอีเมล</button>}</div></div></main>;
 }
 
-export function PublicReportPage({ onSubmit }: { onSubmit: (report: Omit<UserReport, "reference" | "guest">) => void }) {
-  const [villa, setVilla] = useState("Sea Sky Pool Villa");
+export function PublicReportPage({ onSubmit, reference="" }: { reference?:string; onSubmit: (report: Omit<UserReport, "reference" | "guest">) => Promise<void> }) {
+  useEffect(()=>{void currentAccount().catch(()=>{});if(reference)void api<{name:string}>(`/public/qr/${encodeURIComponent(reference)}`).then(v=>setVilla(v.name)).catch(()=>{});},[reference]);
+  const [villa, setVilla] = useState("");
   const [type, setType] = useState("ชื่อบัญชีไม่ตรง");
   const [detail, setDetail] = useState("");
   const [reporter, setReporter] = useState("");
   const [contact, setContact] = useState("");
   const [error, setError] = useState("");
-  const submit = () => {
+  const [busy,setBusy]=useState(false);
+  const submit = async () => {
+    if(busy)return;
     if (!villa.trim() || !detail.trim()) {
       setError("กรุณากรอกชื่อ Villa และรายละเอียดปัญหา");
       return;
     }
-    onSubmit({ villa: villa.trim(), type });
+    setBusy(true);setError("");
+    try {await onSubmit({ villa: villa.trim(), type, qr:reference||undefined, detail:detail.trim(),reporter:reporter.trim(),contact:contact.trim() });}
+    catch(error){setError(error instanceof Error?error.message:"ส่ง Report ไม่สำเร็จ");}
+    finally{setBusy(false);}
   };
   return <main className="page-bg public-report-page">
     <div className="page-hero container"><span className="kicker">PUBLIC REPORT</span><h1>แจ้งปัญหา</h1><p>ส่งข้อมูลให้ทีม VillaCheck ตรวจสอบได้ทันที โดยไม่ต้อง Login หรือ Register</p></div>
@@ -72,14 +78,17 @@ export function PublicReportPage({ onSubmit }: { onSubmit: (report: Omit<UserRep
         <label><span>รายละเอียด</span><textarea value={detail} onChange={event => setDetail(event.target.value)} placeholder="อธิบายข้อมูลหรือเหตุการณ์ที่พบ" /></label>
         <div className="optional-fields"><label><span>ชื่อผู้แจ้ง (Optional)</span><input value={reporter} onChange={event => setReporter(event.target.value)} placeholder="ไม่จำเป็นต้องระบุ" /></label><label><span>เบอร์โทรหรืออีเมลติดต่อกลับ (Optional)</span><input value={contact} onChange={event => setContact(event.target.value)} placeholder="ไม่จำเป็นต้องระบุ" /></label></div>
         {error && <div className="form-message error-state">{error}</div>}
-        <button className="primary-button" onClick={submit}>ส่ง Report</button>
+        <button className="primary-button" disabled={busy} onClick={()=>void submit()}>{busy?"กำลังบันทึก…":"ส่ง Report"}</button>
       </div>
     </div>
   </main>;
 }
 
 export function PublicReportSuccess({ go, reference, linkedToUser }: { go: Go; reference: string; linkedToUser: boolean }) {
-  return <main className="page-bg public-report-page"><div className="page-hero container"><span className="kicker">REPORT RECEIVED</span><h1>ได้รับข้อมูลแล้ว</h1><p>ทีม VillaCheck จะตรวจสอบต่อ</p></div><div className="container report-success-card"><StatusBadge status="Pending" /><span>Reference Number</span><strong>{reference}</strong><p>กรุณาเก็บหมายเลขนี้ไว้สำหรับติดตามสถานะ{linkedToUser ? " · Report นี้ถูกเพิ่มในหน้า Report ของฉันแล้ว" : " · ส่งในรูปแบบ Guest Report"}</p><div className="button-row">{linkedToUser && <button className="primary-button" onClick={() => go("user-reports")}>ไปที่ Report ของฉัน</button>}<button className="outline-button" onClick={() => go("home")}>กลับหน้าหลัก</button></div></div></main>;
+  const [status,setStatus]=useState(""),[note,setNote]=useState(""),[linked,setLinked]=useState(linkedToUser),[error,setError]=useState("");
+  useEffect(()=>{let active=true;const refresh=()=>{if(!reference){setError("ไม่พบเลขอ้างอิงรายงาน");return;}void api<{status:string;publicNote:string;linkedToUser:boolean}>(`/public/reports/${encodeURIComponent(reference)}`).then(r=>{if(active){setStatus(r.status);setNote(r.publicNote);setLinked(r.linkedToUser);}}).catch(e=>{if(active)setError(e.message)});};refresh();const timer=window.setInterval(refresh,10000);return()=>{active=false;clearInterval(timer)};},[reference]);
+
+  return <main className="page-bg public-report-page"><div className="page-hero container"><span className="kicker">REPORT RECEIVED</span><h1>{status?"ติดตามสถานะรายงาน":"กำลังตรวจสอบเลขอ้างอิง"}</h1><p>ทีม VillaCheck จะตรวจสอบต่อ</p></div><div className="container report-success-card"><StatusBadge status={status==="RESOLVED"?"Verified":status==="REJECTED"?"Rejected":"Pending"} /><span>Reference Number</span><strong>{reference}</strong>{error?<p role="alert">{error}</p>:<><p>สถานะ: {status||"กำลังโหลด…"}</p>{note&&<p>คำตอบจากทีมงาน: {note}</p>}<a href={`#${new URLSearchParams({page:"villa-report-success",item:reference})}`}>ลิงก์ติดตามรายงาน</a></>}<p>กรุณาเก็บหมายเลขนี้ไว้สำหรับติดตามสถานะ{linked ? " · Report นี้ถูกเพิ่มในหน้า Report ของฉันแล้ว" : " · ส่งในรูปแบบ Guest Report"}</p><div className="button-row">{linked && <button className="primary-button" onClick={() => go("user-reports")}>ไปที่ Report ของฉัน</button>}<button className="outline-button" onClick={() => go("home")}>กลับหน้าหลัก</button></div></div></main>;
 }
 
 const testAccounts = [

@@ -1,3 +1,5 @@
+import {demoSlip,demoMode} from "./demo-payment.mjs"
+import {createReport, recordEvent, operations} from "./operations.mjs"
 import { adminBusiness } from "./admin-business.mjs"
 import { generatePaymentQr, paymentQrDto } from "./payment-qr.mjs"
 import {
@@ -239,6 +241,7 @@ export function createApp(db, config, transport) {
         .get(invoice.proof_id))
     return {
       id: invoice.id,
+      packageName: (await getPlan(db,invoice.package_id || (await db.prepare("SELECT package_id FROM villas WHERE id=?").get(invoice.villa_id)).package_id)).name,
       paymentQr: await paymentQrDto(db, invoice.id),
       scope: invoice.subscription_owner ? "merchant" : "villa",
       villaId: invoice.villa_id,
@@ -335,7 +338,7 @@ export function createApp(db, config, transport) {
         subject: m.subject,
         body: m.body,
         created: m.created,
-        status: !transport && m.status !== "sent" ? "waiting_config" : m.status,
+        status: m.status === "demo" ? "demo" : !transport && m.status !== "sent" ? "waiting_config" : m.status,
         error: m.last_error,
       })),
       user: {
@@ -345,14 +348,15 @@ export function createApp(db, config, transport) {
         role: user.role,
       },
       subscription: await subscriptionDto(db, user.id),
+      demoMode:await demoMode(db,config),
       paymentInstructions:
-        config.paymentInstructions ||
+        (await demoMode(db,config) ? "DEMO: test payment only. Do not transfer real money. Generate a dummy slip for Admin manual review." : config.paymentInstructions) ||
         "ยังไม่ได้ตั้งค่าบัญชีรับชำระ กรุณาติดต่อทีมงานก่อนโอนเงิน",
       paymentVerificationMode: await getVerificationMode(
         db,
         config.paymentVerificationMode || "MANUAL",
       ),
-      paymentConfigured: Boolean(config.paymentInstructions),
+      paymentConfigured: (await demoMode(db,config)) || Boolean(config.paymentInstructions),
       smtpConfigured: Boolean(transport),
     }
   }
@@ -378,6 +382,22 @@ export function createApp(db, config, transport) {
         }`
       const slipAction = path.match(/^\/api\/payments\/([a-f0-9-]+)\/slip$/)
       if (slipAction) path = `/api/invoices/${slipAction[1]}/proof`
+      const publicReport=path.match(/^\/api\/public\/reports\/(RPT-[A-Za-z0-9-]{1,64})$/)
+      if(req.method === "GET" && publicReport){
+        const report=await db.prepare("SELECT reference,status,public_note,user_id FROM support_reports WHERE reference=?").get(publicReport[1])
+        if(!report)fail(404,"ไม่พบ Report")
+        let viewer;try{viewer=await session(req)}catch(error){if(error.status!==401)throw error}
+        return json({reference:report.reference,status:report.status,publicNote:report.public_note,linkedToUser:Boolean(viewer && viewer.id===report.user_id)})
+      }
+      if (req.method === "POST" && ["/api/public/reports","/api/public/events"].includes(path)) {
+        checkOrigin(req); await rateLimit(req)
+        const data=await body(req)
+        if(path==="/api/public/events")return json(await recordEvent(db,data.qr,data.kind))
+        let viewer
+        try {viewer=await session(req)} catch(error){if(error.status!==401)throw error}
+        if(viewer && req.headers["x-csrf-token"]!==viewer.csrf)fail(403,"CSRF token ไม่ถูกต้อง")
+        return json(await createReport(db,data,viewer))
+      }
       if (req.method === "POST" && path === "/api/leads") {
         await rateLimit(req)
         checkOrigin(req)
@@ -403,8 +423,9 @@ export function createApp(db, config, transport) {
       if (req.method === "GET" && path === "/api/config")
         return json({
           localAccounts: Boolean(config.seedDemo),
-          paymentConfigured: Boolean(config.paymentInstructions),
+          paymentConfigured: (await demoMode(db,config)) || Boolean(config.paymentInstructions),
           oauth: oauthProviders(config),
+          demoMode: await demoMode(db,config),
         })
       if (
         req.method === "GET" &&
@@ -560,6 +581,8 @@ export function createApp(db, config, transport) {
       }
       if (path.startsWith("/api/")) {
         const user = await auth(req)
+        const operation=await operations(db,user,req,path,url,body)
+        if(operation!==undefined)return json(operation)
         if (path === "/api/merchant/profile") {
           if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
           if (req.method === "POST" || req.method === "PATCH") {
@@ -653,6 +676,15 @@ export function createApp(db, config, transport) {
             await audit(db,user,"villa.verification-level",villa.id)
           })
           return json(await state(user))
+        }
+        const demoPayment=path.match(/^\/api\/payments\/([a-f0-9-]+)\/demo-slip$/)
+        if(req.method === "POST" && demoPayment){
+          if(user.role!=="merchant")fail(403,"เฉพาะ Merchant")
+          if(!await demoMode(db,config))fail(403,"Demo mode ปิดอยู่")
+          const {invoice}=await invoiceFor(user,demoPayment[1])
+          const qr=await paymentQrDto(db,invoice.id)
+          if(invoice.status!=="pending" || qr?.status!=="ACTIVE")fail(409,"ต้องมี Payment QR ที่ยังใช้งานได้")
+          return json(demoSlip(invoice))
         }
         const regenerate = path.match(/^\/api\/payments\/([a-f0-9-]+)\/qr$/)
         if (req.method === "POST" && regenerate) {

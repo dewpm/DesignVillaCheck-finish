@@ -1,4 +1,4 @@
-import { usePackages } from "./packagePlans";
+import { usePackages, billingLabel } from "./packagePlans";
 
 export default function PremiumBanner({ onSelect }: { onSelect: (id: string) => void }) {
   const { plans, error } = usePackages();
@@ -8,7 +8,7 @@ export default function PremiumBanner({ onSelect }: { onSelect: (id: string) => 
     <span className="premium-banner-emblem" aria-hidden="true">✦</span>
     <div className="premium-promo-copy"><small>สำหรับ MERCHANT · แพ็กเกจสูงสุด</small>
       <h2>{plan.name} — ยกระดับความน่าเชื่อถือของธุรกิจ Villa</h2>
-      <p>{(plan.amount / 100).toLocaleString("th-TH", { style: "currency", currency: plan.currency })} / เดือน · รองรับที่พักสูงสุด {plan.capacity} แห่ง</p>
+      <p>{(plan.amount / 100).toLocaleString("th-TH", { style: "currency", currency: plan.currency })} / {billingLabel(plan.billingCycle)} · รองรับที่พักสูงสุด {plan.capacity} แห่ง</p>
       <ul>{plan.features.map(feature => <li key={feature}>{feature}</li>)}{plan.maximumVerificationLevel === "PREMIUM_VERIFIED" && <li>สิทธิ์รับการตรวจสอบระดับ Premium</li>}</ul>
       <p className="premium-promo-note">รับสิทธิ์การตรวจสอบระดับสูงสุด โดยต้องผ่านการตรวจเอกสารและอนุมัติจาก Admin</p>
     </div>

@@ -13,6 +13,7 @@ export async function seedDemo(db,{password,adminEmail,adminPassword}={}){
  if(!password || password.length<12)throw Error('DEMO_PASSWORD must have at least 12 characters')
  return db.transaction(async()=>{
   await seedCatalog(db)
+  await db.prepare("INSERT INTO system_settings(key,value) VALUES ('demo_mode','true') ON CONFLICT(key) DO NOTHING").run()
   const add=async(email,name,role,pw=password)=>await db.prepare('SELECT * FROM users WHERE email=?').get(email) || await createUser(db,email,pw,name,role)
   const merchant=await add('demo-merchant@villacheck.example','Merchant ตัวอย่าง','merchant')
   const regional=await add('demo-regional@villacheck.example','Merchant จุดหมายตัวอย่าง','merchant')
@@ -37,6 +38,25 @@ export async function seedDemo(db,{password,adminEmail,adminPassword}={}){
   await db.prepare("INSERT INTO subscriptions(owner_id,package_id,expires,payments,created,lifecycle) VALUES (?,'starter','2000-01-01T00:00:00.000Z',1,?,'ACTIVE') ON CONFLICT(owner_id) DO NOTHING").run(expired.id,now)
   await db.prepare('UPDATE villas SET owner_id=?,package_id=\'starter\' WHERE id=? AND owner_id=?').run(expired.id,uuid('Expired Demo Villa'),merchant.id)
   await db.prepare("UPDATE documents SET owner_id=? WHERE id=?").run(expired.id,uuid("Expired Demo Villa-document"))
-  return {merchant:'demo-merchant@villacheck.example',user:'demo-user@villacheck.example',villas:samples.length}
+  for(const [email,name,plan] of [['demo-payment@villacheck.example','Payment Workflow Demo Villa','starter'],['demo-trial@villacheck.example','Free Trial Demo Villa','basic']]){
+   const owner=await add(email,name+' Merchant','merchant'),id=uuid(name),doc=uuid(name+'-document')
+   await db.prepare("INSERT INTO subscriptions(owner_id,package_id,payments,created,lifecycle) VALUES (?,?,0,?,'PENDING_RENEWAL') ON CONFLICT(owner_id) DO NOTHING").run(owner.id,plan,now)
+   await db.prepare("INSERT INTO documents(id,owner_id,name,mime,bytes) VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING").run(doc,owner.id,'dummy-ownership.pdf','application/pdf',dummyPdf())
+   await db.prepare("INSERT INTO villas(id,owner_id,name,province,merchant,email,package_id,document_id,status,created,photo_url,phone,bank_name,account_name,account_number,verification_level) VALUES (?,?,?,'ชลบุรี',?,?,?,?, 'pending',?, '/demo/villas/villa-1.jpg','0800000000','DEMO BANK','DEMO ACCOUNT','0000000000','REGISTERED') ON CONFLICT(id) DO NOTHING").run(id,owner.id,name,'DEMO business - no real bookings',email,plan,doc,now)
+  }
+  const sampleId=uuid('Sea Sky Demo Villa')
+  for(const [index,status] of ['NEW','UNDER_REVIEW','RESOLVED'].entries()){
+   const id=uuid('report-'+index)
+   await db.prepare('INSERT INTO support_reports(id,reference,user_id,villa_id,villa_name,type,detail,reporter,contact,status,public_note,created,updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(id,'RPT-DEMO-'+id,customer.id,sampleId,'Sea Sky Demo Villa','DEMO report','Dummy report for workflow testing; no real complaint.','Demo User',customer.email,status,status==='RESOLVED'?'Demo report resolved by test team.':'',now,now)
+  }
+  for(const [index,status]of ['MATCHED','REVIEW_REQUIRED'].entries()){
+   const id=uuid('check-'+index)
+   await db.prepare('INSERT INTO user_checks VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING').run(id,'CHK-DEMO-'+id,customer.id,sampleId,'Sea Sky Demo Villa','VC-DEMO-'+sampleId,status,'Dummy check snapshot - not a guarantee of bookings.','0000000000','0800000000','demo-'+index,now)
+  }
+  for(let day=0;day<7;day++)for(const [index,kind]of ['PROFILE_VIEW','QR_SCAN','CONTACT_VIEW'].entries()){
+   const stamp=new Date(Date.now()-day*86400000).toISOString(),id=uuid('event-'+stamp.slice(0,10)+'-'+index)
+   await db.prepare('INSERT INTO villa_events VALUES (?,?,?,?) ON CONFLICT(id) DO NOTHING').run(id,sampleId,kind,stamp)
+  }
+  return {merchant:'demo-merchant@villacheck.example',user:'demo-user@villacheck.example',villas:samples.length+2,workflowMerchants:["demo-payment@villacheck.example","demo-trial@villacheck.example"]}
  })
 }

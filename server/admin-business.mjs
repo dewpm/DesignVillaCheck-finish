@@ -1,3 +1,4 @@
+import {demoMode} from "./demo-payment.mjs"
 import { randomUUID } from "node:crypto"
 import { listPlans, getPlan, levels, getVerificationMode } from "./catalog.mjs"
 function invalid(message) {
@@ -55,7 +56,7 @@ export async function adminBusiness(
     if (
       !/^[a-z0-9-]+$/.test(merged.slug) ||
       merged.currency !== "THB" ||
-      merged.billingCycle !== "MONTHLY" ||
+      !["MONTHLY","QUARTERLY","YEARLY"].includes(merged.billingCycle) ||
       typeof merged.showPremiumBanner !== "boolean" ||
       typeof merged.isActive !== "boolean" ||
       !Number.isInteger(merged.sort_order)
@@ -81,7 +82,7 @@ export async function adminBusiness(
           merged.description,
           amount,
           "THB",
-          "MONTHLY",
+          merged.billingCycle,
           merged.trialMonths,
           merged.capacity,
           JSON.stringify(merged.features),
@@ -100,6 +101,10 @@ export async function adminBusiness(
       const data = await readBody(req)
       if (!["MANUAL", "AUTO"].includes(data.paymentVerificationMode))
         invalid("โหมดไม่ถูกต้อง")
+      if(data.demoMode!==undefined){
+        if(typeof data.demoMode!=="boolean")invalid("Demo mode must be boolean")
+        await db.prepare("INSERT INTO system_settings(key,value) VALUES ('demo_mode',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(data.demoMode))
+      }
       await db
         .prepare(
           "INSERT INTO system_settings(key,value) VALUES ('payment_verification_mode',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
@@ -112,6 +117,7 @@ export async function adminBusiness(
         config.paymentVerificationMode || "MANUAL",
       ),
       autoProviderConfigured: false,
+      demoMode: await demoMode(db,config),
     }
   }
   if (path === "/api/admin/leads" && req.method === "GET") {

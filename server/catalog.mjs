@@ -86,7 +86,8 @@ export async function trustDto(db, villa) {
     .prepare("SELECT * FROM subscriptions WHERE owner_id=?")
     .get(villa.owner_id)
   const plan = await getPlan(db, sub?.package_id || villa.package_id)
-  const qrStatus = qrState(villa, sub)
+  const override = await db.prepare("SELECT value FROM system_settings WHERE key=?").get("villa_qr:"+villa.id)
+  const qrStatus = ["SUSPENDED","INACTIVE"].includes(override?.value) ? override.value : qrState(villa, sub)
   const actual = qrStatus === "ACTIVE" ? villa.verification_level : "REGISTERED"
   return {
     qrStatus,

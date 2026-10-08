@@ -7,6 +7,7 @@ export type PackagePlan = {
 };
 export const selectedPlanKey = "villacheck-selected-package";
 export const packageIntentKey = "villacheck-package-intent";
+export const billingLabel = (cycle: string) => ({MONTHLY:"เดือน",QUARTERLY:"3 เดือน",YEARLY:"ปี"})[cycle] || "รอบ";
 export function planId(name: string) { return sessionStorage.getItem(selectedPlanKey) || name; }
 export function usePackages() {
  const [plans,setPlans]=useState<PackagePlan[]>([]);

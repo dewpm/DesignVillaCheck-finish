@@ -1,3 +1,4 @@
+import {demoMode} from "./demo-payment.mjs"
 import { randomUUID } from "node:crypto"
 import zxing from "@zxing/library"
 export function qrSvg(payload) {
@@ -36,7 +37,7 @@ export async function paymentQrDto(db, paymentId, now = Date.now()) {
       qr.status === "ACTIVE"
         ? `data:image/svg+xml;base64,${Buffer.from(qrSvg(qr.payload)).toString("base64")}`
         : null,
-    kind: "PAYMENT_PAGE",
+    kind: await demoMode(db) ? "DEMO_PAYMENT" : "PAYMENT_PAGE",
     serverTime: new Date(now).toISOString(),
   }
 }

@@ -19,6 +19,7 @@ function status(v: MerchantVilla) {
   if (v.status === "pending") return "รอ Admin ตรวจสอบ"
   if (v.status === "changes") return "ต้องแก้ไขเอกสาร"
   if (v.status === "rejected") return "ไม่ผ่านการอนุมัติ"
+  if (["SUSPENDED","INACTIVE"].includes(v.qrStatus))return "QR ถูกระงับหรือปิดใช้งาน"
   if (!v.qr) return "อนุมัติแล้ว · รอชำระเงิน"
   return new Date(v.expires) <= new Date() ? "QR หมดอายุ" : "QR ใช้งานได้"
 }
@@ -245,11 +246,12 @@ export default function Backoffice({
       (v.name + v.merchant + v.email)
         .toLowerCase()
         .includes(search.toLowerCase()) &&
-      (filter === "all" || v.status === filter),
+      (filter === "all" || (billing ? v.invoices.some(i=>i.paymentStatus===filter) : v.status === filter)),
   )
   const showDetails = (v: MerchantVilla) => {
     setVerificationLevel(v.status === "approved" ? v.verificationLevel : "VERIFIED")
     setSelected(v.id)
+    setForm({...form,name:v.name,province:v.province,merchant:v.merchant,email:v.email,photoUrl:v.photoUrl||"",phone:v.phone,bankName:v.bankName,accountName:v.accountName,accountNumber:v.accountNumber,package:v.packageId})
     setReason("")
     setUpload(null)
     go(admin ? "admin-review" : "owner-villa-detail")
@@ -293,7 +295,8 @@ export default function Backoffice({
         · แพ็กเกจชำระเงินต้องยืนยันการชำระก่อนเปิดใช้ QR
       </div>
       {!admin && <SubscriptionPanel store={store} chosenPlan={chosenPlan} setChosenPlan={setChosenPlan} renewalPlan={renewalPlan} setRenewalPlan={setRenewalPlan} busy={busy} perform={perform} onSubscribed={() => go("owner-add-villa")} />}
-      {!admin && store.villas.some(v => v.invoices.length > 0) && <section className="merchant-panel"><h2>การชำระแพ็กเกจบัญชี Merchant</h2><p>ชำระแพ็กเกจครั้งเดียว ครอบคลุม Villa ภายในจำนวนสิทธิ์ แต่ละแห่งมี QR ของตัวเอง</p>{store.villas.flatMap(v => v.invoices).map(invoice => <PaymentPanel key={invoice.id} invoice={invoice} admin={false} instructions={store.paymentInstructions} configured={store.paymentConfigured} busy={busy} perform={perform} />)}</section>}
+      {!admin && store.villas.some(v => v.invoices.length > 0) && <section className="merchant-panel"><h2>การชำระแพ็กเกจบัญชี Merchant</h2><p>ชำระแพ็กเกจครั้งเดียว ครอบคลุม Villa ภายในจำนวนสิทธิ์ แต่ละแห่งมี QR ของตัวเอง</p>{store.villas.flatMap(v => v.invoices).map(invoice => <PaymentPanel key={invoice.id} invoice={invoice} admin={false} instructions={store.paymentInstructions} configured={store.paymentConfigured}
+                      demo={store.demoMode} busy={busy} perform={perform} />)}</section>}
       {message && (
         <div className="form-message" role="status">
           {message}
@@ -311,7 +314,7 @@ export default function Backoffice({
               [
                 "QR ใช้งานได้",
                 store.villas.filter(
-                  (v) => v.qr && new Date(v.expires) > new Date(),
+                  (v) => v.qrStatus === "ACTIVE",
                 ).length,
               ],
               [
@@ -402,10 +405,11 @@ export default function Backoffice({
               onChange={(e) => setFilter(e.target.value)}
             >
               <option value="all">ทุกสถานะ</option>
-              <option value="pending">รอตรวจสอบ</option>
-              <option value="approved">อนุมัติแล้ว</option>
-              <option value="changes">ต้องแก้ไข</option>
-              <option value="rejected">ไม่อนุมัติ</option>
+              {billing && ["WAITING_FOR_SLIP","PENDING_REVIEW","VERIFIED","REJECTED"].map(s=><option key={s} value={s}>{s}</option>)}
+              {!billing&&<option value="pending">รอตรวจสอบ</option>}
+              {!billing&&<option value="approved">อนุมัติแล้ว</option>}
+              {!billing&&<option value="changes">ต้องแก้ไข</option>}
+              {!billing&&<option value="rejected">ไม่อนุมัติ</option>}
             </select>
           </div>
           {!list.length && (
@@ -441,6 +445,7 @@ export default function Backoffice({
                     <h2>{v.name}</h2>
                     <p>{v.email}</p>
                   </div>
+                  {v.premiumBanner&&<span className="merchant-status">Premium Verified</span>}
                   <span className={`merchant-status ${v.status}`}>
                     {status(v)}
                   </span>
@@ -476,6 +481,7 @@ export default function Backoffice({
                       admin={admin}
                       instructions={store.paymentInstructions}
                       configured={store.paymentConfigured}
+                      demo={store.demoMode}
                       busy={busy}
                       perform={perform}
                     />
@@ -488,6 +494,7 @@ export default function Backoffice({
               page === "owner-villa-detail" ||
               page === "owner-villa-edit") && (
               <section className="merchant-panel merchant-detail">
+                {!admin&&<form className="portal-form" onSubmit={async e=>{e.preventDefault();try{await api(`/merchant/villas/${active.id}`,form);await perform("/state",undefined,"Updated; pending document review");}catch(e){setMessage(e instanceof Error?e.message:"Update failed")}}}><h2>แก้ไขข้อมูล Villa</h2><p>การแก้ข้อมูลจะส่งให้ Admin ตรวจใหม่ โดยคง QR เดิม</p>{(["name","province","merchant","phone","bankName","accountName","accountNumber","photoUrl"] as const).map(k=><label key={k}>{k}<input required={["name","province","merchant"].includes(k)} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></label>)}<button disabled={busy} className="primary-button">บันทึกและส่งตรวจใหม่</button></form>}
                 <h2>เอกสารกรรมสิทธิ์ · {active.name}</h2>
                 <p>{active.document.name}</p>
                 <div className="merchant-villa-meta">
@@ -583,7 +590,7 @@ export default function Backoffice({
                 ประวัติการส่งอีเมล <small>{store.mails.length} รายการ</small>
               </h2>
               <p>
-                {store.smtpConfigured
+                {store.demoMode ? "DEMO · อีเมลถูกบันทึกให้ตรวจดูในระบบ ไม่ส่งผ่าน SMTP จริง" : store.smtpConfigured
                   ? "ส่งผ่าน SMTP อัตโนมัติ มีการลองใหม่เมื่อส่งไม่สำเร็จ"
                   : "ยังไม่ได้ตั้งค่า SMTP · อีเมลเก็บในคิวและจะส่งเมื่อเชื่อมบริการแล้ว"}
               </p>
@@ -602,6 +609,7 @@ export default function Backoffice({
                         ถึง {mail.to} · {date(mail.created)} ·{" "}
                         {mail.status === "sent"
                           ? "ส่งแล้ว"
+                          : mail.status === "demo" ? "DEMO · เก็บอีเมลตัวอย่าง ไม่ส่งจริง"
                           : mail.status === "waiting_config"
                             ? "รอตั้งค่า SMTP"
                             : mail.status === "failed"
@@ -665,6 +673,7 @@ export function MerchantVerification({
     accountName?: string
     accountNumber?: string
   } | null>(null)
+  const activityLogged = useRef("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   useEffect(() => {
@@ -676,7 +685,18 @@ export function MerchantVerification({
       `/public/qr/${encodeURIComponent(reference)}`,
     )
       .then((value) => {
-        if (!cancelled) setVilla(value)
+        if (!cancelled) {
+          setVilla(value)
+          const activityKey=reference+":"+value.locked
+          if(activityLogged.current===activityKey)return
+          activityLogged.current=activityKey
+          void api("/public/events",{qr:reference,kind:"PROFILE_VIEW"}).catch(()=>{})
+          if(sessionStorage.getItem("villacheck-scan-reference")===reference){sessionStorage.removeItem("villacheck-scan-reference");void api("/public/events",{qr:reference,kind:"QR_SCAN"}).catch(()=>{})}
+          if(!value.locked){
+            void api("/public/events",{qr:reference,kind:"CONTACT_VIEW"}).catch(()=>{})
+            void currentAccount().then(()=>api("/user/checks",{qr:reference,requestKey:crypto.randomUUID()})).catch(()=>{})
+          }
+        }
       })
       .catch((error) => {
         if (!cancelled) setError(error.message)
@@ -705,8 +725,10 @@ export function MerchantVerification({
             </span>
             {villa.photoUrl && <img src={villa.photoUrl} alt={villa.name} style={{maxWidth:"100%",maxHeight:360}}/>}
             <p>{villa.province} · {villa.merchantName} · {villa.verificationLevel} · {villa.qrStatus}</p>
+            {villa.premiumBanner && <p className="merchant-status">✦ Premium Verified · เอกสารผ่านและ Subscription ใช้งานได้</p>}
             <a href={`https://www.google.com/maps/search/?${new URLSearchParams({api:"1",query:`${villa.name} ${villa.province}`})}`} target="_blank" rel="noopener noreferrer">ดูที่ตั้งบน Google Maps</a>
             <p>วันหมดอายุ: {date(villa.expires)}</p>
+            <button onClick={()=>go("villa-report",reference)}>แจ้งปัญหาเกี่ยวกับที่พักนี้</button>
             <section className={`verification-contact ${villa.locked ? "locked" : ""}`}>
               <div className="verification-contact-head"><h2>ข้อมูลติดต่อและบัญชีรับเงิน</h2><span>{villa.locked ? "สำหรับสมาชิก User" : "เข้าสู่ระบบ User แล้ว"}</span></div>
               <dl>
@@ -738,6 +760,7 @@ function PaymentPanel({
   admin,
   instructions,
   configured,
+  demo,
   busy,
   perform,
 }: {
@@ -745,6 +768,7 @@ function PaymentPanel({
   admin: boolean
   instructions: string
   configured: boolean
+  demo: boolean
   busy: boolean
   perform: Perform
 }) {
@@ -787,7 +811,9 @@ function PaymentPanel({
         ใบแจ้งชำระ{invoice.scope === "merchant" ? "แพ็กเกจ Merchant" : " Villa"} ฿{invoice.amount.toLocaleString("th-TH")} · อายุ QR{" "}
         {invoice.months} เดือน
       </strong>
-      <small>{invoice.id}</small>
+      <small>{invoice.id} · {invoice.packageName} · สร้าง {date(invoice.created)}</small>
+      <p>Payment: {invoice.paymentStatus} · QR: {invoice.paymentQr?.status||"ไม่มี QR"} · หมดอายุ {date(invoice.paymentQr?.expiresAt||"")}</p>
+      {invoice.proof&&<p>อัปเดตหลักฐาน {new Date(invoice.updatedAt).toLocaleString("th-TH")}</p>}
       {!admin && invoice.status === "pending" && <PaymentQr paymentId={invoice.id} initial={invoice.paymentQr} />}
       <p>
         {invoice.status === "paid"
@@ -798,6 +824,7 @@ function PaymentPanel({
             : "รอชำระเงินและแนบสลิป"}
       </p>
       {invoice.reason && <p>เหตุผลจาก Admin: {invoice.reason}</p>}
+      {demo && invoice.status === "pending" && !admin && <div className="merchant-panel"><strong>DEMO · ไม่มีการโอนเงินจริง</strong><p>สร้างสลิปตัวอย่างและส่งเข้าคิวให้ Admin ตรวจ Manual</p><button disabled={busy} onClick={async()=>{try{const slip=await api<{reference:string;document:Document}>(`/payments/${invoice.id}/demo-slip`,{});await perform(`/invoices/${invoice.id}/proof`,slip,"ส่งสลิป dummy ให้ Admin ตรวจแล้ว");}catch(e){setError(e instanceof Error?e.message:"สร้างสลิปไม่สำเร็จ")}}}>สร้างและแนบสลิป dummy</button>{error&&<p role="alert">{error}</p>}</div>}
       {invoice.status === "pending" && !admin && (
         <div className="portal-form">
           <p className="payment-instructions">{instructions}</p>

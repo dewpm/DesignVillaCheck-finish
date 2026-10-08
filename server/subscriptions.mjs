@@ -20,6 +20,8 @@ export async function subscriptionDto(db, ownerId) {
     packageId: sub.package_id,
     name: plan.name,
     amount: plan.amount / 100,
+    billingCycle: plan.billing_cycle,
+    billingMonths: {MONTHLY:1,QUARTERLY:3,YEARLY:12}[plan.billing_cycle] || 1,
     capacity: plan.capacity,
     used,
     expires: sub.expires,
@@ -90,17 +92,18 @@ export async function subscriptionInvoice(db, villa, appUrl, selectedPlan) {
     .run(villa.owner_id, planId, id)
   const plan = await getPlan(db, planId)
   const paymentQr = await generatePaymentQr(db, id, appUrl)
+  const invoice = await db.prepare("SELECT months FROM invoices WHERE id=?").get(id)
   await db
     .prepare("UPDATE mails SET subject=?,body=? WHERE invoice_id=?")
     .run(
       `VillaCheck: ${plan.name} สำหรับบัญชี Merchant ${
         plan.amount ? "แจ้งชำระแพ็กเกจ" : "เปิดใช้งานทดลองฟรี"
       }`,
-      `เรียน ${villa.merchant}\n\nแพ็กเกจบัญชี Merchant: ${plan.name}\nรองรับ ${plan.capacity} Villa · แต่ละ Villa มี QR ของตัวเอง\nยอดชำระ ฿${plan.amount / 100} ต่อบัญชีแพ็กเกจ\nVilla: ${villa.name}\nเลขที่ใบแจ้งชำระ: ${id}\nPayment QR (เปิดหน้าชำระเงิน): ${paymentQr.payload}\nหมดอายุ: ${paymentQr.expiresAt}\n${appUrl}/#page=owner-package\n${
+      `เรียน ${villa.merchant}\n\nแพ็กเกจบัญชี Merchant: ${plan.name}\nรองรับ ${plan.capacity} Villa · แต่ละ Villa มี QR ของตัวเอง\nยอดชำระ ฿${plan.amount / 100} ต่อบัญชีแพ็กเกจ (${invoice.months} เดือน)\nVilla: ${villa.name}\nเลขที่ใบแจ้งชำระ: ${id}\nPayment QR (เปิดหน้าชำระเงิน): ${paymentQr.payload}\nหมดอายุ: ${paymentQr.expiresAt}\n${appUrl}/#page=owner-package\n${
         plan.amount
           ? "กรุณาแนบสลิปเพื่อให้ Admin ยืนยันการชำระ แล้วระบบจะเปิดใช้ QR ของ Villa ที่อนุมัติแล้ว"
           : "Admin อนุมัติแล้ว เปิดใช้ QR ทดลองฟรี 3 เดือน ไม่มีค่าใช้จ่าย"
-      }\nการต่ออายุแพ็กเกจครั้งถัดไปเพิ่มอายุ 1 เดือนให้ QR ภายในแพ็กเกจ โดยใช้รหัสเดิม`,
+      }\nการต่ออายุแพ็กเกจครั้งถัดไปเพิ่มอายุ ${{MONTHLY:1,QUARTERLY:3,YEARLY:12}[plan.billingCycle] || 1} เดือนให้ QR ภายในแพ็กเกจ โดยใช้รหัสเดิม`,
       id,
     )
   return id

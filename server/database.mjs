@@ -216,10 +216,11 @@ export function addMonths(value, months) {
 }
 export async function createInvoice(db, villa, appUrl) {
   const id = randomUUID()
-  const months = villa.payments === 0 ? 3 : 1
   const plan = await db
     .prepare("SELECT * FROM package_catalog WHERE id=?")
     .get(villa.package_id)
+  const cycleMonths={MONTHLY:1,QUARTERLY:3,YEARLY:12}[plan.billing_cycle] || 1
+  const months=plan.billing_cycle === "MONTHLY" && villa.payments === 0 ? 3 : cycleMonths
   const created = new Date().toISOString()
   // The first payment covers the selected monthly package and includes a 3-month QR validity.
   await db

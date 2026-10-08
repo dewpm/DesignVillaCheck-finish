@@ -184,6 +184,8 @@ model users {
   business_name                               String             @default("")
   phone                                       String             @default("")
   address                                     String             @default("")
+  support_reports support_reports[]
+  user_checks user_checks[]
   audits                                      audits[]
   documents                                   documents[]
   invoices_invoices_confirmed_byTousers       invoices[]         @relation("invoices_confirmed_byTousers")
@@ -219,8 +221,58 @@ model villas {
   reviewed_at        String?
   reviewed_by        String?
   photo_url          String    @default("")
+  support_reports support_reports[]
+  user_checks user_checks[]
+  villa_events villa_events[]
   invoices           invoices?
   mails              mails[]
   documents          documents @relation(fields: [document_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users              users     @relation(fields: [owner_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model support_reports {
+ id String @id
+ reference String @unique
+ user_id String?
+ villa_id String?
+ villa_name String
+ type String
+ detail String
+ reporter String @default("")
+ contact String @default("")
+ status String @default("NEW")
+ admin_note String @default("")
+ public_note String @default("")
+ created String
+ updated String
+ users users? @relation(fields:[user_id], references:[id], onDelete:NoAction, onUpdate:NoAction)
+ villas villas? @relation(fields:[villa_id], references:[id], onDelete:NoAction, onUpdate:NoAction)
+ @@index([user_id,created],map:"reports_user_created")
+ @@index([villa_id,created],map:"reports_villa_created")
+}
+model user_checks {
+ id String @id
+ reference String @unique
+ user_id String
+ villa_id String?
+ villa_name String
+ qr String @default("")
+ status String
+ result String
+ submitted_account String @default("")
+ submitted_contact String @default("")
+ request_key String
+ created String
+ users users @relation(fields:[user_id], references:[id], onDelete:NoAction, onUpdate:NoAction)
+ villas villas? @relation(fields:[villa_id], references:[id], onDelete:NoAction, onUpdate:NoAction)
+ @@unique([user_id,request_key])
+ @@index([user_id,created],map:"checks_user_created")
+}
+model villa_events {
+ id String @id
+ villa_id String
+ kind String
+ created String
+ villas villas @relation(fields:[villa_id], references:[id], onDelete:NoAction, onUpdate:NoAction)
+ @@index([villa_id,created],map:"events_villa_created")
 }

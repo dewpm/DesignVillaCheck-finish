@@ -84,6 +84,7 @@ export async function startServer(env = process.env, { listen = true, databaseFa
     }
     const config = {
       appUrl,
+      demoMode:env.DEMO_MODE === "true",
       paymentVerificationMode: env.PAYMENT_VERIFICATION_MODE || "MANUAL",
       lineClientId: env.LINE_CHANNEL_ID,
       lineClientSecret: env.LINE_CHANNEL_SECRET,

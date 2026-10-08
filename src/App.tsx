@@ -1,7 +1,8 @@
+import OperationsPortal from "./OperationsPortal";
 import PremiumBanner from "./PremiumBanner";
 import MerchantProfile from "./MerchantProfile";
 import AdminBusiness from "./AdminBusiness";
-import { usePackages, selectedPlanKey, packageIntentKey } from "./packagePlans";
+import { usePackages, billingLabel, selectedPlanKey, packageIntentKey } from "./packagePlans";
 import { api, currentAccount } from "./api";
 import VillaMap from "./VillaMap";
 import ProvinceExplorer, { popularProvinces } from "./ProvinceExplorer";
@@ -132,11 +133,11 @@ function Header({ page, go }: { page: Page; go: (page: Page) => void }) {
   </header>;
 }
 
-function VillaCard({ villa, onClick }: { villa: typeof villas[0]; onClick: () => void }) {
+function VillaCard({ villa, onClick }: { villa: typeof villas[0] & {premiumBanner?:boolean}; onClick: () => void }) {
   return <article className="villa-card" onClick={onClick}>
     <div className="card-image"><img src={villa.image} alt={`ภาพ ${villa.name}`} /><Badge pending={villa.status !== "ตรวจสอบข้อมูลแล้ว"}>{villa.status}</Badge></div>
     <div className="card-body">
-      <h3>{villa.name}</h3>
+      <h3>{villa.name}</h3>{villa.premiumBanner && <small>✦ Premium Verified</small>}
       <div className="villa-meta"><span><Icon name="pin" size={17} />{villa.province}</span>{villa.guests !== "ไม่ระบุ" && <span><Icon name="users" size={17} />สูงสุด {villa.guests}</span>}</div>
       <div className="card-foot"><span><Icon name="clock" size={15} />อัปเดตล่าสุด {villa.updated}</span><button aria-label={`ดู ${villa.name}`} onClick={event => { event.stopPropagation(); onClick(); }}><Icon name="arrow" size={18} /></button></div>
     </div>
@@ -167,7 +168,7 @@ function VillaShowcase({ go }: { go: (p: Page, item?: string) => void }) {
   const [active, setActive] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
   const [items,setItems]=useState<(typeof villas[number] & {qr:string;premiumBanner:boolean;createdAt:string})[]>([]);
-  useEffect(()=>{let active=true;void api<{villas:{name:string;province:string;qr:string;qrStatus:string;photoUrl:string;updated:string;premiumBanner:boolean}[]}>("/public/villas").then(data=>{if(active)setItems(data.villas.slice(0,4).map(v=>({...v,createdAt:v.updated,updated:new Date(v.updated).toLocaleDateString("th-TH",{day:"numeric",month:"short",year:"numeric",timeZone:"Asia/Bangkok"}),guests:"ไม่ระบุ",status:v.qrStatus === "ACTIVE" ? "ตรวจสอบข้อมูลแล้ว" : "หมดอายุ",image:v.photoUrl || "/villa-placeholder.svg"})));}).catch(()=>{});return()=>{active=false;};},[]);
+  useEffect(()=>{let active=true;void api<{villas:{name:string;province:string;qr:string;qrStatus:string;photoUrl:string;updated:string;premiumBanner:boolean}[]}>("/public/villas").then(data=>{if(active)setItems(data.villas.slice(0,4).map(v=>({...v,createdAt:v.updated,updated:new Date(v.updated).toLocaleDateString("th-TH",{day:"numeric",month:"short",year:"numeric",timeZone:"Asia/Bangkok"}),guests:"ไม่ระบุ",status:({ACTIVE:"ตรวจสอบข้อมูลแล้ว",EXPIRED:"หมดอายุ",SUSPENDED:"ถูกระงับ",INACTIVE:"ปิดใช้งาน",PENDING:"รอตรวจสอบ"} as Record<string,string>)[v.qrStatus] || v.qrStatus,image:v.photoUrl || "/villa-placeholder.svg"})));}).catch(()=>{});return()=>{active=false;};},[]);
   const scrollToSlide = (index: number) => {
     const next = Math.max(0, Math.min(items.length - 1, index));
     const element = trackRef.current?.children[next] as HTMLElement | undefined;
@@ -306,7 +307,7 @@ function Directory({ go, initialQuery = "", initialProvince = "" }: { go: (p: Pa
   const [sort, setSort] = useState("ล่าสุด");
   const [liveVillas,setLiveVillas]=useState<(typeof villas[number] & {qr:string;premiumBanner:boolean;createdAt:string})[]>([]);
   const [directoryError,setDirectoryError]=useState("");
-  useEffect(()=>{let active=true;void api<{villas:{name:string;province:string;qr:string;qrStatus:string;photoUrl:string;updated:string;premiumBanner:boolean}[]}>("/public/villas").then(data=>{if(active)setLiveVillas(data.villas.map(v=>({...v,createdAt:v.updated,updated:new Date(v.updated).toLocaleDateString("th-TH",{day:"numeric",month:"short",year:"numeric",timeZone:"Asia/Bangkok"}),guests:"ไม่ระบุ",status:v.qrStatus === "ACTIVE" ? "ตรวจสอบข้อมูลแล้ว" : "หมดอายุ",image:v.photoUrl || "/villa-placeholder.svg"})));}).catch(e=>{if(active)setDirectoryError(e.message);});return()=>{active=false;};},[]);
+  useEffect(()=>{let active=true;void api<{villas:{name:string;province:string;qr:string;qrStatus:string;photoUrl:string;updated:string;premiumBanner:boolean}[]}>("/public/villas").then(data=>{if(active)setLiveVillas(data.villas.map(v=>({...v,createdAt:v.updated,updated:new Date(v.updated).toLocaleDateString("th-TH",{day:"numeric",month:"short",year:"numeric",timeZone:"Asia/Bangkok"}),guests:"ไม่ระบุ",status:({ACTIVE:"ตรวจสอบข้อมูลแล้ว",EXPIRED:"หมดอายุ",SUSPENDED:"ถูกระงับ",INACTIVE:"ปิดใช้งาน",PENDING:"รอตรวจสอบ"} as Record<string,string>)[v.qrStatus] || v.qrStatus,image:v.photoUrl || "/villa-placeholder.svg"})));}).catch(e=>{if(active)setDirectoryError(e.message);});return()=>{active=false;};},[]);
   const filtered = [...liveVillas]
     .filter(v => v.name.toLowerCase().includes(query.toLowerCase()))
     .filter(v => !province || v.province === province)
@@ -506,10 +507,10 @@ function ScanQr({ go, onVerified }: { go: (p: Page, item?: string) => void; onVe
     }
   };
 
-  const simulateScan = () => {
-    stopCamera();
-    setScanState("loading");
-    window.setTimeout(() => completeScan("VC-TH-2025-01842"), 700);
+  const simulateScan = async () => {
+    stopCamera();setScanState("loading");
+    try { const data=await api<{villas:{qr:string;qrStatus:string}[]}>("/public/villas");const sample=data.villas.find(v=>v.qrStatus==="ACTIVE");if(!sample)throw Error("ยังไม่มี Villa QR สำหรับทดสอบ");completeScan(sample.qr); }
+    catch(e){setErrorMessage(e instanceof Error?e.message:"โหลด QR ไม่สำเร็จ");setScanState("not-found");}
   };
 
   useEffect(() => {
@@ -599,7 +600,7 @@ function Pricing({ onSelect, go }: { onSelect: (name: string) => void; go: (page
     <div className="container plan-grid">
       {plans.map(plan => <article className={`plan-card ${plan.showPremiumBanner ? "recommended" : ""}`} key={plan.name}>
         {plan.showPremiumBanner && <div className="recommended-label">แนะนำสำหรับคุณ</div>}
-        <div className="plan-head"><h2>{plan.name}</h2><p>{plan.description}</p><div><strong>{plan.amount ? `฿${(plan.amount / 100).toLocaleString("th-TH")}` : "ฟรี"}</strong><span>{plan.amount ? "/ เดือน" : `${plan.trialMonths} เดือน`}</span></div></div>
+        <div className="plan-head"><h2>{plan.name}</h2><p>{plan.description}</p><div><strong>{plan.amount ? `฿${(plan.amount / 100).toLocaleString("th-TH")}` : "ฟรี"}</strong><span>{plan.amount ? `/ ${billingLabel(plan.billingCycle)}` : `${plan.trialMonths} เดือน`}</span></div></div>
         <hr /><ul>{plan.features.map(f => <li key={f}><span><Icon name="check" size={14} /></span>{f}</li>)}</ul>
         <button className={plan.showPremiumBanner ? "primary-button full" : "outline-button full"} onClick={() => onSelect(plan.id)}>เลือกแพ็กเกจ</button>
       </article>)}
@@ -630,14 +631,12 @@ export default function App() {
   const [page, navigate, selectedItem] = usePageNavigation<Page>();
   const [selectedPackage, setSelectedPackage] = useState(() => sessionStorage.getItem(selectedPlanKey) || "Trust Starter");
   const [directorySearch, setDirectorySearch] = useState({ query: "", province: "" });
-  const [qrReference, setQrReference] = useState("VC-TH-2025-01842");
+  const [qrReference, setQrReference] = useState("");
   const [ownerLoggedIn, setOwnerLoggedIn] = useState(false);
   const [userLoggedIn, setUserLoggedIn] = useState(false);
-  const [reportReference, setReportReference] = useState("RPT-1042");
-  const [reportCounter, setReportCounter] = useState(1042);
-  const [userReports, setUserReports] = useState<UserReport[]>([
-    { reference: "RPT-1038", villa: "Sea Sky Pool Villa", type: "ช่องทางติดต่อไม่ตรง", guest: false },
-  ]);
+  const [reportReference, setReportReference] = useState("");
+
+
   const go = (next: Page, item?: string) => { if (next === "login") { setOwnerLoggedIn(false); setUserLoggedIn(false); } navigate(next, item); };
   const search = (query: string, province: string) => {
     setDirectorySearch({ query, province });
@@ -653,15 +652,13 @@ export default function App() {
   const showVerificationResult = (reference: string) => {
     let code = reference.trim();
     try { const url = new URL(code); code = new URLSearchParams(url.hash.slice(1)).get("item") || code; } catch { /* Raw QR reference. */ }
+    sessionStorage.setItem("villacheck-scan-reference",code);
     setQrReference(code);
     go("verify", code);
   };
-  const submitReport = (report: Omit<UserReport, "reference" | "guest">) => {
-    const reference = `RPT-${reportCounter}`;
-    setReportReference(reference);
-    setReportCounter(current => current + 1);
-    if (userLoggedIn) setUserReports(current => [{ ...report, reference, guest: false }, ...current]);
-    go("villa-report-success");
+  const submitReport = async (report: Omit<UserReport, "reference" | "guest">) => {
+    const result=await api<{reference:string;linkedToUser:boolean}>("/public/reports",report);
+    setReportReference(result.reference);setUserLoggedIn(result.linkedToUser);go("villa-report-success",result.reference);
   };
   const isOwnerPage = page.startsWith("owner-") && !["owner-auth", "owner-registration", "owner-information", "owner-onboarding-villa", "owner-select-villa"].includes(page);
   const isAdminPage = page.startsWith("admin-");
@@ -670,17 +667,17 @@ export default function App() {
   const content =
     page === "home" ? <Home go={go} onSearch={search} onSelect={selectPackage} /> :
     page === "directory" ? <Directory go={go} initialQuery={directorySearch.query} initialProvince={directorySearch.province} /> :
-    page === "detail" ? <Detail go={go} villa={villas.find(v => v.name === selectedItem) || villas[0]} /> :
+    page === "detail" ? <MerchantVerification go={go} reference={selectedItem || qrReference} /> :
     page === "scan" ? <ScanQr go={go} onVerified={showVerificationResult} /> :
     page === "verify" ? <MerchantVerification go={go} reference={selectedItem || qrReference} /> :
     page === "pricing" ? <Pricing onSelect={selectPackage} go={go} /> :
     isPublicInfoPage ? <PublicInfoPage page={page} go={go} selectedArticle={selectedItem} /> :
-    page === "villa-report" ? <PublicReportPage onSubmit={submitReport} /> :
-    page === "villa-report-success" ? <PublicReportSuccess go={go} reference={reportReference} linkedToUser={userLoggedIn} /> :
+    page === "villa-report" ? <PublicReportPage onSubmit={submitReport} reference={selectedItem} /> :
+    page === "villa-report-success" ? <PublicReportSuccess go={go} reference={selectedItem||reportReference} linkedToUser={userLoggedIn} /> :
     page === "user-registration" ? <UserRegistration go={go} reference={selectedItem} /> :
     ["admin-packages","admin-leads","admin-settings","admin-subscriptions"].includes(page) ? <AdminBusiness page={page} go={go} /> :
     page === "admin-users" ? <AdminUsers go={go} /> :
-    page === "user-dashboard" ? <MemberDashboard go={go} /> :
+    ["admin-owners","admin-checks","admin-reports","admin-qr","owner-analytics","owner-reports"].includes(page) || page.startsWith("user-") ? <OperationsPortal page={page} go={go} item={selectedItem} /> :
     page === "login" ? <LoginPage reference={selectedItem} go={go} onAuthenticated={role => { if (role === "Merchant") setOwnerLoggedIn(true); if (role === "User") setUserLoggedIn(true); }} /> :
     page === "owner-auth" ? <OwnerPackageAuth go={go} packageName={selectedPackage} onOwnerLogin={() => setOwnerLoggedIn(true)} /> :
     page === "owner-information" || page === "owner-profile" ? <MerchantProfile page={page} go={go} /> :
@@ -691,7 +688,7 @@ export default function App() {
     page === "package-request-pending" ? <Backoffice page="owner-package" go={go} /> :
     isOwnerPage ? <Backoffice page={page} go={go} initialPackage={selectedPackage} /> :
     isAdminPage ? <Backoffice page={page} go={go} initialPackage={selectedPackage} /> :
-    <UserPages page={page} go={go} reports={userReports} selectedReference={selectedItem} />;
+    <UserPages page={page} go={go} reports={[]} selectedReference={selectedItem} />;
   const isStandalone = page === "scan" || page === "verify" || page === "login" || page === "owner-auth" || page === "owner-registration" || page === "owner-information" || page === "owner-onboarding-villa" || page === "owner-select-villa" || page === "package-confirmation" || page === "package-request-pending" || isOwnerPage || isAdminPage || isUserPage;
   const showPublicFooter = ["home", "directory", "detail", "pricing", "scan", "verify", "villa-report", "villa-report-success"].includes(page) || isPublicInfoPage;
   return <div className="app">{!isStandalone && <Header page={page} go={go} />}{content}{showPublicFooter && <Footer go={go} />}</div>;
