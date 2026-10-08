@@ -188,7 +188,7 @@ function VillaShowcase({ go }: { go: (p: Page, item?: string) => void }) {
   </div>;
 }
 
-function Home({ go, onSearch }: { go: (p: Page, item?: string) => void; onSearch: (query: string, province: string) => void }) {
+function Home({ go, onSearch, onSelect }: { go: (p: Page, item?: string) => void; onSearch: (query: string, province: string) => void; onSelect: (id: string) => void }) {
   const [heroSlide, setHeroSlide] = useState(0);
   const [heroAutoPlay, setHeroAutoPlay] = useState(true);
   const heroTouchStart = useRef(0);
@@ -203,6 +203,7 @@ function Home({ go, onSearch }: { go: (p: Page, item?: string) => void; onSearch
   }, [heroAutoPlay]);
 
   return <>
+    <div className="container premium-promo-wrap"><PremiumBanner onSelect={onSelect} /></div>
     <section className="hero">
       <div className="hero-orb hero-orb-one" /><div className="hero-orb hero-orb-two" />
       <div className="hero-map-line hero-map-line-one" /><div className="hero-map-line hero-map-line-two" />
@@ -242,7 +243,6 @@ function Home({ go, onSearch }: { go: (p: Page, item?: string) => void; onSearch
         <button onClick={() => go("scan")}><span>SCAN / VERIFY</span><Icon name="arrow" size={17} /></button>
       </div>
     </section>
-    <div className="container premium-promo-wrap"><PremiumBanner onSelect={() => go("pricing")} /></div>
 
     <section className="section how-section" id="how">
       <div className="container">
@@ -595,7 +595,7 @@ function Pricing({ onSelect, go }: { onSelect: (name: string) => void; go: (page
   return <main className="page-bg pricing-page">
     <div className="page-hero container"><span className="kicker">PRICING FOR MERCHANTS</span><h1>แพ็กเกจที่เติบโตไปพร้อมธุรกิจคุณ</h1><p>สมัครแพ็กเกจที่บัญชี Merchant แล้วเพิ่ม Villa ตามจำนวนสิทธิ์<br />1 Villa = 1 QR · ตรวจเอกสารโดย Admin ก่อนเปิดใช้งาน</p></div>
     {error && <p role="alert" className="container">{error}</p>}
-    <div className="container premium-promo-wrap"><PremiumBanner onSelect={() => { const premium = plans.find(p => p.maximumVerificationLevel === "PREMIUM_VERIFIED"); if (premium) onSelect(premium.id); }} /></div>
+    <div className="container premium-promo-wrap"><PremiumBanner onSelect={onSelect} /></div>
     <div className="container plan-grid">
       {plans.map(plan => <article className={`plan-card ${plan.showPremiumBanner ? "recommended" : ""}`} key={plan.name}>
         {plan.showPremiumBanner && <div className="recommended-label">แนะนำสำหรับคุณ</div>}
@@ -668,7 +668,7 @@ export default function App() {
   const isUserPage = page.startsWith("user-");
   const isPublicInfoPage = ["about", "verification-standard", "articles", "article-detail", "owner-guide", "help", "contact", "privacy", "terms", "social-facebook", "social-instagram", "social-line", "gallery"].includes(page);
   const content =
-    page === "home" ? <Home go={go} onSearch={search} /> :
+    page === "home" ? <Home go={go} onSearch={search} onSelect={selectPackage} /> :
     page === "directory" ? <Directory go={go} initialQuery={directorySearch.query} initialProvince={directorySearch.province} /> :
     page === "detail" ? <Detail go={go} villa={villas.find(v => v.name === selectedItem) || villas[0]} /> :
     page === "scan" ? <ScanQr go={go} onVerified={showVerificationResult} /> :
