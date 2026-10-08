@@ -10,7 +10,10 @@ export class DomainService implements OnModuleDestroy {
  constructor(private readonly database:PrismaDatabaseService){}
  private getRuntime(){
   this.runtime ||= (async()=>{
-   await this.database.transaction(()=>seedCatalog(this.database));
+   // Existing catalogs are managed by Admin; avoid a global write lock on every
+   // serverless cold start. Bootstrap defaults only for an empty database.
+   const catalog=await this.database.prepare("SELECT id FROM package_catalog LIMIT 1").get();
+   if(!catalog)await this.database.transaction(()=>seedCatalog(this.database));
    const result=await startServer({...process.env,SERVE_FRONTEND:"false",SEED_DEMO_ACCOUNTS:"false"},{listen:false,databaseFactory:async()=>this.database});
    return {server:result.server as DomainServer};
   })().catch(error=>{this.runtime=undefined;throw error;});

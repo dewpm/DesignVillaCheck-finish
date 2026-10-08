@@ -15,6 +15,12 @@ export function createMailWorker(db, config, transport) {
     // Delivery leases allow retry after an interrupted function invocation.
     for (let i = 0; i < (config.serverless ? 1 : 10); i++) {
       const now = Date.now()
+      // An empty outbox must not queue behind payment/registration transactions.
+      // Claiming below remains atomic when multiple workers see the same mail.
+      const ready = await db.prepare(
+        "SELECT id FROM mails WHERE status IN ('queued','failed','sending') AND next_attempt<=? AND attempts<8 LIMIT 1",
+      ).get(now)
+      if (!ready) break
       const mail = await db.transaction(() =>
         db.prepare(
           "UPDATE mails SET status='sending',attempts=attempts+1,next_attempt=? WHERE id=(SELECT id FROM mails WHERE status IN ('queued','failed','sending') AND next_attempt<=? AND attempts<8 ORDER BY created LIMIT 1) RETURNING *",

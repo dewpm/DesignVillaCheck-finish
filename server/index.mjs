@@ -25,13 +25,16 @@ export async function startServer(env = process.env, { listen = true, databaseFa
       )
   let server
   try {
-    const add = (email, password, name, role) =>
-      db.transaction(async () => {
+    const add = async (email, password, name, role) => {
+      // Existing accounts need no write transaction on a serverless cold start.
+      if (await db.prepare("SELECT id FROM users WHERE email=?").get(email)) return
+      return db.transaction(async () => {
         if (
           !(await db.prepare("SELECT id FROM users WHERE email=?").get(email))
         )
           await createUser(db, email, password, name, role)
       })
+    }
     if (env.ADMIN_EMAIL && env.ADMIN_PASSWORD) {
       if (env.ADMIN_PASSWORD.length < 12)
         throw Error("ADMIN_PASSWORD must have at least 12 characters")
