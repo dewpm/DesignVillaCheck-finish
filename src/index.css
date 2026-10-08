@@ -1045,3 +1045,4 @@ footer { background: var(--ocean); color: white; padding: 72px 0 24px; }
 
 .oauth-button.line { background: #06c755; color: #fff; border-color: #06c755; }
 .oauth-button.line:disabled { opacity: .45; }
+.line-login-notice { margin: 12px 0; padding: 12px 14px; border: 1px solid #b9e8cf; border-radius: 10px; background: #effbf4; color: #164c31; font-size: 14px; line-height: 1.7; text-align: left; }
