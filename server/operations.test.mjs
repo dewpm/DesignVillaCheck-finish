@@ -46,10 +46,14 @@ test('persistent reports/checks, scoped analytics, QR controls and dummy payment
   await app.runMail();assert.equal(sends,0);assert.equal((await db.prepare('SELECT status FROM mails WHERE invoice_id=?').get(invoice.id)).status,'demo')
   await request('/admin/settings',{paymentVerificationMode:'MANUAL',demoMode:false},a);assert.equal((await request(`/payments/${invoice.id}/demo-slip`,{},payer)).status,403);await request('/admin/settings',{paymentVerificationMode:'MANUAL',demoMode:true},a)
  })
+ await t.test('browsing telemetry does not consume the sign-in rate limit',async()=>{
+  for(let i=0;i<35;i++)assert.equal((await request('/public/events',{qr:villa.qr,kind:'PROFILE_VIEW'})).status,200)
+  assert.equal((await request('/auth/login',{email:'other-user@test.com',password:'UserPassword123'})).status,200)
+ })
  await t.test('Merchant edits require fresh document review but preserve QR identity',async()=>{
   assert.equal((await request(`/merchant/villas/${villa.id}`,{name:'Bad'},outsider)).status,404)
   assert.equal((await request(`/merchant/villas/${villa.id}`,{name:villa.name,province:villa.province,merchant:villa.merchant,phone:villa.phone,bankName:villa.bank_name,accountName:villa.account_name,accountNumber:villa.account_number,photoUrl:villa.photo_url},m)).status,200)
-  const result=(await request('/public/qr/'+villa.qr)).value;assert.equal(result.valid,false);assert.equal(result.qrStatus,'PENDING');assert.equal(result.premiumBanner,false);assert.equal((await db.prepare('SELECT qr FROM villas WHERE id=?').get(villa.id)).qr,villa.qr)
+  const result=(await request('/public/qr/'+villa.qr)).value;assert.equal(result.valid,false);assert.equal(result.qrStatus,'PENDING');assert.equal(result.premiumBanner,false);assert.equal((await db.prepare('SELECT qr FROM villas WHERE id=?').get(villa.id)).qr,villa.qr);assert.equal((await request(`/villas/${villa.id}/review`,{status:'changes',reason:'Line one\nLine two'},a)).status,200)
  })
  await t.test('free trial bypasses invoice and quarterly catalog changes actually affect payment period',async()=>{
   const v=await db.prepare("SELECT * FROM villas WHERE name='Free Trial Demo Villa'").get();await request(`/villas/${v.id}/review`,{status:'approved',verificationLevel:'VERIFIED'},a);const state=(await request('/state',undefined,trial)).value;assert.equal(state.subscription.status,'ACTIVE');assert.equal(state.villas[0].invoices.length,0)

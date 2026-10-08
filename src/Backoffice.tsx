@@ -278,7 +278,7 @@ export default function Backoffice({
                         ? `${admin ? "Admin" : "Merchant"} Dashboard`
                         : "Villa ของคุณ"}
           </h1>
-          <p>1 Villa = 1 QR · อายุครั้งแรก 3 เดือน · ต่ออายุครั้งละ 1 เดือน</p>
+          <p>1 Villa = 1 QR · อายุใช้งานตามแพ็กเกจและใบแจ้งชำระ · ต่ออายุใช้ QR เดิม</p>
         </div>
         {!admin && !adding && (
           <button

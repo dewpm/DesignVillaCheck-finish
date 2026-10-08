@@ -47,7 +47,8 @@ const text = (value, label, max = 200) => {
     typeof value !== "string" ||
     !value.trim() ||
     value.trim().length > max ||
-    /[\x00-\x1f\x7f]/.test(value)
+    /[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value) ||
+    (max < 2000 && /[\t\r\n]/.test(value))
   )
     fail(400, `กรุณาระบุ ${label} ให้ถูกต้อง`)
   return value.trim()
@@ -129,14 +130,15 @@ async function insertDocument(db, owner, file) {
 export function createApp(db, config, transport) {
   const worker = createMailWorker(db, config, transport)
   const attempts = new Map()
-  async function rateLimit(req) {
+  async function rateLimit(req, bucket = "auth") {
     // Vercel overwrites this header. Other hosts use only the direct socket IP.
     const address = config.serverless
       ? req.headers["x-vercel-forwarded-for"] ||
         req.headers["x-forwarded-for"] ||
         req.socket.remoteAddress
       : req.socket.remoteAddress
-    const key = hash(String(address))
+    const key = hash(String(address) + (bucket === "events" ? ":events" : ""))
+    const limit = bucket === "events" ? 300 : 30
     const now = Date.now()
     if (config.serverless) {
       const entry = await db.transaction(async () => {
@@ -147,7 +149,7 @@ export function createApp(db, config, transport) {
           )
           .get(key, now + 15 * 60000)
       })
-      if (entry.count > 30) fail(429, "ลองเข้าสู่ระบบมากเกินไป กรุณารอ 15 นาที")
+      if (entry.count > limit) fail(429, "คำขอถี่เกินไป กรุณารอ 15 นาที")
       return
     }
     if (attempts.size > 10000)
@@ -160,7 +162,7 @@ export function createApp(db, config, transport) {
     }
     entry.count++
     attempts.set(key, entry)
-    if (entry.count > 30) fail(429, "ลองเข้าสู่ระบบมากเกินไป กรุณารอ 15 นาที")
+    if (entry.count > limit) fail(429, "คำขอถี่เกินไป กรุณารอ 15 นาที")
   }
   const cookie = (token, age = 28800) =>
     `vc_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${age}${
@@ -390,7 +392,7 @@ export function createApp(db, config, transport) {
         return json({reference:report.reference,status:report.status,publicNote:report.public_note,linkedToUser:Boolean(viewer && viewer.id===report.user_id)})
       }
       if (req.method === "POST" && ["/api/public/reports","/api/public/events"].includes(path)) {
-        checkOrigin(req); await rateLimit(req)
+        checkOrigin(req); await rateLimit(req,path==="/api/public/events"?"events":"auth")
         const data=await body(req)
         if(path==="/api/public/events")return json(await recordEvent(db,data.qr,data.kind))
         let viewer

@@ -190,6 +190,8 @@ function VillaShowcase({ go }: { go: (p: Page, item?: string) => void }) {
 }
 
 function Home({ go, onSearch, onSelect }: { go: (p: Page, item?: string) => void; onSearch: (query: string, province: string) => void; onSelect: (id: string) => void }) {
+  const {plans}=usePackages();
+  const trial=plans.find(p=>p.trialMonths>0);
   const [heroSlide, setHeroSlide] = useState(0);
   const [heroAutoPlay, setHeroAutoPlay] = useState(true);
   const heroTouchStart = useRef(0);
@@ -292,8 +294,8 @@ function Home({ go, onSearch, onSelect }: { go: (p: Page, item?: string) => void
     <section className="section pricing-preview">
       <div className="container pricing-banner premium-pricing">
         <div className="pricing-number">05</div>
-        <div><span className="kicker">TRUST INFRASTRUCTURE FOR MERCHANTS</span><h2>ทำให้ความน่าเชื่อถือ<br />มองเห็นและตรวจสอบได้</h2><p>เริ่มต้น Basic Trust QR ฟรี 3 เดือน พร้อม Trust Profile และ QR Verification</p></div>
-        <div><small>START FROM</small><strong>ฟรี</strong><span>3 เดือน · ไม่มีค่าใช้จ่าย</span><button className="sun-button" onClick={() => go("pricing")}>สำรวจทุกแพ็กเกจ</button></div>
+        <div><span className="kicker">TRUST INFRASTRUCTURE FOR MERCHANTS</span><h2>ทำให้ความน่าเชื่อถือ<br />มองเห็นและตรวจสอบได้</h2><p>{trial?`เริ่มต้น ${trial.name} ทดลองฟรี ${trial.trialMonths} เดือน พร้อม Trust Profile และ QR Verification`:"เลือกแพ็กเกจเพื่อสร้าง Trust Profile และ QR Verification"}</p></div>
+        <div><small>START FROM</small><strong>{trial?"ทดลองฟรี":"ดูแพ็กเกจ"}</strong>{trial&&<span>{trial.trialMonths} เดือน · หลังเอกสารผ่านการอนุมัติ</span>}<button className="sun-button" onClick={() => go("pricing")}>สำรวจทุกแพ็กเกจ</button></div>
       </div>
     </section>
   </>;
