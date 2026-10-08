@@ -203,7 +203,6 @@ function Home({ go, onSearch, onSelect }: { go: (p: Page, item?: string) => void
   }, [heroAutoPlay]);
 
   return <>
-    <div className="container premium-promo-wrap"><PremiumBanner onSelect={onSelect} /></div>
     <section className="hero">
       <div className="hero-orb hero-orb-one" /><div className="hero-orb hero-orb-two" />
       <div className="hero-map-line hero-map-line-one" /><div className="hero-map-line hero-map-line-two" />
@@ -244,6 +243,7 @@ function Home({ go, onSearch, onSelect }: { go: (p: Page, item?: string) => void
       </div>
     </section>
 
+    <div className="container premium-promo-wrap"><PremiumBanner onSelect={onSelect} /></div>
     <section className="section how-section" id="how">
       <div className="container">
         <div className="timeline-head"><div><span className="kicker">TRUST JOURNEY / 01—03</span><h2>ตรวจสอบใน 3 ขั้นตอน</h2></div><p>จากการค้นหา ไปจนถึงหลักฐานที่ตรวจสอบย้อนกลับได้<br />ออกแบบเพื่อช่วงเวลาก่อนตัดสินใจโอน</p></div>
