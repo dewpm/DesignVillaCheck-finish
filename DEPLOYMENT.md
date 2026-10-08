@@ -253,3 +253,16 @@ Six sample Villas use three locally bundled illustration photos from the existin
 Demo catalog expansion: 12 stored sample Villas, with 10 public approved entries spanning 10 provinces and 2 private document-review examples. An additional sample Merchant keeps each account within its Villa limit. New bundled photos villa-4.jpg through villa-9.jpg are illustrative Unsplash sources photo-1600596542815-ffad4c1539a9, photo-1613977257363-707ba9348227, photo-1600607687920-4e2a09cf159d, photo-1613490493576-7fde63acd811, photo-1564013799919-ab600027ffc6, photo-1756115377696-0bdbf1c21a02.
 
 Highest-verification banner: PremiumBanner is shown only when the package grants banner entitlement and maximum PREMIUM_VERIFIED, Admin-assigned actual level is PREMIUM_VERIFIED, documents are approved, and QR/subscription is ACTIVE. Admin may POST /api/villas/:id/verification-level for an approved Villa; changes are audited and capped by package entitlement. Two labelled dummy records simulate highest-level results; seeding never overwrites an Admin decision with reviewed_by set.
+
+## LINE Login for User accounts
+
+Create a LINE Login channel with the Web app type in LINE Developers. Enable the email permission and request approval as required by LINE; a verified LINE ID token must include an email to create a new VillaCheck User. Existing email accounts are not automatically linked.
+
+Set server-only `LINE_CHANNEL_ID` and `LINE_CHANNEL_SECRET` in Vercel Production (and local `.env` for local testing). Do not use a public frontend prefix. Register these exact callback URLs:
+
+- Production: `https://design-villacheck.vercel.app/api/auth/oauth/line/callback`
+- Local: `http://localhost:8443/api/auth/oauth/line/callback`
+
+Publish the LINE Login channel for users outside its developer/tester roles and redeploy Vercel after adding environment variables. The LINE button stays disabled until both settings exist. The backend verifies the ID token through LINE, including the expected channel, nonce and expiration, and creates only User accounts. Provider credentials and access tokens are never returned to the browser.
+
+Official setup: https://developers.line.biz/en/docs/line-login/integrate-line-login/

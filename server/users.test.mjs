@@ -133,6 +133,8 @@ test("OAuth state, provider identity, PKCE, return paths and collision handling"
     appUrl: "http://localhost:3001",
     allowedOrigins: ["http://localhost:3001"],
     fakeHash: hashPassword("fake-password-placeholder"),
+    lineClientId: "line-id",
+    lineClientSecret: "line-secret",
     googleClientId: "google-id",
     googleClientSecret: "must-stay-server-side",
     facebookClientId: "facebook-id",
@@ -144,7 +146,7 @@ test("OAuth state, provider identity, PKCE, return paths and collision handling"
         ok: true,
         json: async () =>
           String(url).includes("/token") || String(url).includes("access_token")
-            ? { access_token: "provider-token" }
+            ? { access_token: "provider-token", id_token: "line-id-token" }
             : profile,
       }
     },
@@ -271,6 +273,22 @@ test("OAuth state, provider identity, PKCE, return paths and collision handling"
     ).role,
     "user",
   )
+  const line = await start("line")
+  assert.equal(line.location.origin, "https://access.line.me")
+  assert.equal(line.location.searchParams.get("scope"), "openid profile email")
+  assert.equal(line.location.searchParams.get("code_challenge_method"), "S256")
+  profile = { sub: "line-subject", name: "LINE Member", email: "line@example.com", iss: "https://access.line.me", aud: "line-id", exp: Math.floor(Date.now()/1000)+300, nonce: line.location.searchParams.get("nonce") }
+  assert.equal((await callback("line", line)).headers.get("location"), "http://localhost:3001/#page=verify&item=VC-test")
+  assert.equal((await db.prepare("SELECT role FROM users WHERE email='line@example.com'").get()).role, "user")
+  const verifyRequest = requests.at(-1)
+  assert.equal(verifyRequest.url, "https://api.line.me/oauth2/v2.1/verify")
+  assert.equal(new URLSearchParams(verifyRequest.options.body).get("nonce"), profile.nonce)
+  const wrongNonce = await start("line")
+  profile.nonce = "wrong-nonce"
+  assert.ok((await callback("line", wrongNonce)).headers.get("location").includes("provider_failed"))
+  const missingEmail = await start("line")
+  profile = {...profile, sub: "line-no-email", email: undefined, nonce: missingEmail.location.searchParams.get("nonce")}
+  assert.ok((await callback("line", missingEmail)).headers.get("location").includes("email_required"))
   assert.equal(safeReturn("#page=admin-dashboard"), "#page=user-dashboard")
   assert.equal(safeReturn("//attacker.example"), "#page=user-dashboard")
 })

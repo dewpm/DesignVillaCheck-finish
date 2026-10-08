@@ -15,6 +15,7 @@ export function safeReturn(value) {
 export function oauthProviders(config) {
   return {
     google: Boolean(config.googleClientId && config.googleClientSecret),
+    line: Boolean(config.lineClientId && config.lineClientSecret),
     facebook: Boolean(
       config.facebookClientId &&
         config.facebookClientSecret &&
@@ -38,7 +39,7 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
   }
   return async (req, res, url) => {
     const match = url.pathname.match(
-      /^\/api\/auth\/oauth\/(google|facebook)\/(start|callback)$/,
+      /^\/api\/auth\/oauth\/(google|facebook|line)\/(start|callback)$/,
     )
     if (!match || req.method !== "GET") return false
     const [, provider, action] = match
@@ -55,9 +56,10 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
       failure("not_configured")
       return true
     }
+    const line = provider === "line"
     const google = provider === "google"
-    const clientId = google ? config.googleClientId : config.facebookClientId
-    const secret = google
+    const clientId = line ? config.lineClientId : google ? config.googleClientId : config.facebookClientId
+    const secret = line ? config.lineClientSecret : google
       ? config.googleClientSecret
       : config.facebookClientSecret
     const callback = `${config.appUrl}/api/auth/oauth/${provider}/callback`
@@ -88,7 +90,7 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
           Date.now() + 600000,
         )
       const authUrl = new URL(
-        google
+        line ? "https://access.line.me/oauth2/v2.1/authorize" : google
           ? "https://accounts.google.com/o/oauth2/v2/auth"
           : `https://www.facebook.com/${config.facebookVersion}/dialog/oauth`,
       )
@@ -96,16 +98,17 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
         client_id: clientId,
         redirect_uri: callback,
         response_type: "code",
-        scope: google ? "openid email profile" : "email,public_profile",
+        scope: line ? "openid profile email" : google ? "openid email profile" : "email,public_profile",
         state,
       }).toString()
-      if (google) {
+      if (google || line) {
         authUrl.searchParams.set(
           "code_challenge",
           createHash("sha256").update(verifier).digest("base64url"),
         )
         authUrl.searchParams.set("code_challenge_method", "S256")
       }
+      if (line) authUrl.searchParams.set("nonce", verifier)
       res.setHeader("Set-Cookie", stateCookie(state))
       redirect(authUrl.toString())
       return true
@@ -147,12 +150,12 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
         redirect_uri: callback,
         code,
       })
-      if (google) {
+      if (google || line) {
         params.set("grant_type", "authorization_code")
         params.set("code_verifier", flow.verifier)
       }
       const tokens = await getJson(
-        google
+        line ? "https://api.line.me/oauth2/v2.1/token" : google
           ? "https://oauth2.googleapis.com/token"
           : `https://graph.facebook.com/${config.facebookVersion}/oauth/access_token`,
         {
@@ -163,6 +166,15 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
       )
       if (typeof tokens.access_token !== "string" || !tokens.access_token)
         throw Error("provider_failed")
+      let profile
+      if (line) {
+        if (typeof tokens.id_token !== "string" || !tokens.id_token) throw Error("provider_failed")
+        profile = await getJson("https://api.line.me/oauth2/v2.1/verify", {
+          method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({id_token: tokens.id_token, client_id: clientId, nonce: flow.verifier}).toString(),
+        })
+        if (profile.iss !== "https://access.line.me" || profile.aud !== clientId || profile.nonce !== flow.verifier || !Number.isFinite(profile.exp) || profile.exp <= Date.now()/1000) throw Error("provider_failed")
+      } else {
       const profileUrl = new URL(
         google
           ? "https://openidconnect.googleapis.com/v1/userinfo"
@@ -177,10 +189,11 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
             .digest("hex"),
         )
       }
-      const profile = await getJson(profileUrl, {
+      profile = await getJson(profileUrl, {
         headers: { Authorization: `Bearer ${tokens.access_token}` },
       })
-      const subject = google ? profile.sub : profile.id
+      }
+      const subject = google || line ? profile.sub : profile.id
       if (typeof subject !== "string" || !subject || subject.length > 255)
         throw Error("provider_failed")
       if (google && profile.email_verified !== true)

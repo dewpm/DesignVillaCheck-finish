@@ -85,6 +85,8 @@ export async function startServer(env = process.env, { listen = true, databaseFa
     const config = {
       appUrl,
       paymentVerificationMode: env.PAYMENT_VERIFICATION_MODE || "MANUAL",
+      lineClientId: env.LINE_CHANNEL_ID,
+      lineClientSecret: env.LINE_CHANNEL_SECRET,
       googleClientId: env.GOOGLE_CLIENT_ID,
       googleClientSecret: env.GOOGLE_CLIENT_SECRET,
       facebookClientId: env.FACEBOOK_APP_ID,
