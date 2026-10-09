@@ -119,21 +119,20 @@ export function LoginPage({ go, onAuthenticated, reference = "" }: { go: Go; ref
     finally { setLoading(false); }
   };
 
-  return <main className="auth-page">
-    <div className="auth-card">
-      <button className="text-button auth-back" onClick={() => go("home")}>← กลับหน้าหลัก</button>
-      <span className="kicker">VILLACHECK ACCOUNT</span>
-      <h1>เข้าสู่ระบบ</h1>
-      <p>เข้าสู่พื้นที่ใช้งานตามบทบาทของคุณ</p>
-      <SocialLogin reference={reference} />
-      <div className="form-stack">
-        <label><span>อีเมล</span><input value={email} onChange={event => setEmail(event.target.value)} placeholder="name@example.com" /></label>
-        <label><span>รหัสผ่าน</span><input value={password} onChange={event => setPassword(event.target.value)} type="password" placeholder="รหัสผ่าน" /></label>
-        {error && <div className="form-message error-state">{error}</div>}
-        <button className="primary-button full" onClick={login} disabled={loading}>{loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}</button>
-      </div>
-      <button className="text-button" onClick={() => go("user-registration", reference)}>สมัครสมาชิก User ด้วยอีเมล</button>
-      <button className="text-button" onClick={() => go("owner-registration")}>สมัครบัญชี Merchant</button>
+  return <main className="login-screen">
+    <div className="login-sheet">
+      <div className="login-topbar"><button aria-label="กลับหน้าหลัก" onClick={()=>go("home")}><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m15 5-7 7 7 7"/></svg></button><button aria-label="ช่วยเหลือการเข้าสู่ระบบ" onClick={()=>go("help")}><svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4"/><path d="M12 16h.01"/></svg></button></div>
+      <div className="login-brand"><span className="login-brand-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.7"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6z"/><path d="m8 12 3 3 5-6"/></svg></span><strong>Villa<span>Check</span></strong></div>
+      <h1 className="login-title">เข้าสู่ระบบ VillaCheck</h1>
+      <form className="login-email-form" onSubmit={event=>{event.preventDefault();void login();}}>
+        <label className="login-field"><span>อีเมล</span><input aria-label="อีเมล" required type="email" autoComplete="username" value={email} onChange={event=>setEmail(event.target.value)} placeholder="อีเมลของคุณ"/></label>
+        <label className="login-field"><span>รหัสผ่าน</span><input aria-label="รหัสผ่าน" required autoComplete="current-password" value={password} onChange={event=>setPassword(event.target.value)} type="password" placeholder="รหัสผ่าน"/></label>
+        {error&&<p className="login-error" role="alert">{error}</p>}
+        <button className="login-submit" disabled={loading}>{loading?"กำลังเข้าสู่ระบบ…":"เข้าสู่ระบบ"}</button>
+      </form>
+      <div className="login-divider"><span>หรือ</span></div>
+      <SocialLogin reference={reference} variant="stacked"/>
+      <div className="login-bottom"><button className="login-create" onClick={()=>go("user-registration",reference)}>สร้างบัญชี User</button><button className="login-merchant" onClick={()=>go("owner-registration")}>สมัครบัญชี Merchant</button><p>เมื่อดำเนินการต่อ แสดงว่าคุณยอมรับ<button onClick={()=>go("terms")}>เงื่อนไขการใช้บริการ</button>และได้อ่าน<button onClick={()=>go("privacy")}>นโยบายความเป็นส่วนตัว</button>ของ VillaCheck แล้ว</p></div>
       {localAccounts && <div className="test-accounts">
         <strong>บัญชีทดสอบบนเซิร์ฟเวอร์ Local</strong>
         {testAccounts.map(account => <button key={account.role === "Merchant" ? "Merchant" : account.role} onClick={() => { setEmail(account.email); setPassword(account.password); setError(""); }}>
