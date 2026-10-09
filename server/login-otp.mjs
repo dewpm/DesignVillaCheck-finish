@@ -3,7 +3,7 @@ import {createUser} from './database.mjs'
 const fail=(status,message)=>{throw Object.assign(Error(message),{status})}
 export function otpChannels(config,transport){
  const enabled=typeof config.otpSecret==='string'&&config.otpSecret.length>=32
- return {email:Boolean(enabled&&transport&&config.smtpFrom),sms:Boolean(enabled&&config.twilioAccountSid&&config.twilioAuthToken&&(config.twilioFrom||config.twilioMessagingServiceSid))}
+ return {email:Boolean(enabled&&transport&&config.smtpFrom),sms:Boolean(enabled&&config.thaiBulkSmsApiKey&&config.thaiBulkSmsApiSecret&&config.thaiBulkSmsSender)}
 }
 export function otpDestination(channel,value){
  if(typeof value!=='string'||value.length>254)fail(400,'อีเมลหรือเบอร์โทรไม่ถูกต้อง')
@@ -32,9 +32,12 @@ export function createLoginOtp(db,config,transport,fetchSms=fetch){
    try{
     if(channel==='email')await transport.sendMail({from:config.smtpFrom,to:destination,subject:'VillaCheck: รหัสเข้าสู่ระบบ',text:`รหัส OTP ของคุณคือ ${code} ใช้ได้ 5 นาที ห้ามให้รหัสนี้กับผู้อื่น`})
     else{
-     const params=new URLSearchParams({To:destination,Body:`VillaCheck OTP: ${code}. Expires in 5 minutes. Do not share.`,...(config.twilioMessagingServiceSid?{MessagingServiceSid:config.twilioMessagingServiceSid}:{From:config.twilioFrom})})
-     const r=await fetchSms(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(config.twilioAccountSid)}/Messages.json`,{method:'POST',headers:{Authorization:'Basic '+Buffer.from(config.twilioAccountSid+':'+config.twilioAuthToken).toString('base64'),'Content-Type':'application/x-www-form-urlencoded'},body:params.toString(),signal:AbortSignal.timeout(15000),redirect:'error'})
+     const params=new URLSearchParams({msisdn:destination.slice(1),message:`VillaCheck OTP: ${code}. Expires in 5 minutes. Do not share.`,sender:config.thaiBulkSmsSender})
+     const r=await fetchSms('https://api-v2.thaibulksms.com/sms',{method:'POST',headers:{Authorization:'Basic '+Buffer.from(config.thaiBulkSmsApiKey+':'+config.thaiBulkSmsApiSecret).toString('base64'),Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:params.toString(),signal:AbortSignal.timeout(15000),redirect:'error'})
      if(!r.ok)throw Error('sms delivery failed')
+     const result=await r.json()
+     const accepted=result.phone_number_list?.some(p=>typeof p.number==='string'&&p.number.replace(/^\+/,'')===destination.slice(1)&&typeof p.message_id==='string'&&p.message_id.length>0)
+     if(!accepted)throw Error('sms recipient not accepted')
     }
    }catch{await db.prepare('UPDATE login_otps SET consumed=1 WHERE id=?').run(id);fail(503,'ส่ง OTP ไม่สำเร็จ กรุณาลองใหม่ภายหลัง')}
    return {challengeId:id,expiresAt:new Date(now+300000).toISOString(),resendAfter:60}
