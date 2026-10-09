@@ -39,7 +39,13 @@ export function createLoginOtp(db,config,transport,fetchSms=fetch){
      const accepted=result.phone_number_list?.some(p=>typeof p.number==='string'&&p.number.replace(/^\+/,'')===destination.slice(1)&&typeof p.message_id==='string'&&p.message_id.length>0)
      if(!accepted)throw Error('sms recipient not accepted')
     }
-   }catch{await db.prepare('UPDATE login_otps SET consumed=1 WHERE id=?').run(id);fail(503,'ส่ง OTP ไม่สำเร็จ กรุณาลองใหม่ภายหลัง')}
+   }catch(error){
+    await db.prepare('UPDATE login_otps SET consumed=1 WHERE id=?').run(id)
+    const reason=channel==='email'?({EAUTH:'SMTP_AUTH_FAILED',ETIMEDOUT:'SMTP_TIMEOUT',ECONNECTION:'SMTP_CONNECTION_FAILED',ESOCKET:'SMTP_CONNECTION_FAILED',EENVELOPE:'SMTP_RECIPIENT_OR_SENDER_REJECTED'}[error.code]||'EMAIL_DELIVERY_FAILED'):'SMS_DELIVERY_FAILED'
+    await db.prepare('INSERT INTO system_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('otp_delivery_'+channel,JSON.stringify({ok:false,reason,at:new Date().toISOString()}))
+    fail(503,channel==='email'?'ส่งอีเมล OTP ไม่สำเร็จ กรุณาใช้ช่องทางอื่นหรือลองใหม่ภายหลัง':'ส่ง SMS OTP ไม่สำเร็จ กรุณาใช้ช่องทางอื่นหรือลองใหม่ภายหลัง')
+   }
+   await db.prepare('INSERT INTO system_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('otp_delivery_'+channel,JSON.stringify({ok:true,at:new Date().toISOString()}))
    return {challengeId:id,expiresAt:new Date(now+300000).toISOString(),resendAfter:60}
   },
   async verify(data){

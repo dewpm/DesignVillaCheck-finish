@@ -447,7 +447,7 @@ export function createApp(db, config, transport) {
       if (await oauth(req, res, url)) return
       if(req.method==='POST'&&['/api/auth/otp/request','/api/auth/otp/verify'].includes(path)){
         checkOrigin(req);await rateLimit(req);const data=await body(req)
-        if(path.endsWith('/request'))return json(await loginOtp.request(data))
+        if(path.endsWith('/request')){try{return json(await loginOtp.request(data))}catch(error){if(error.status===503)fail(503,error.message);throw error}}
         const user=await loginOtp.verify(data);const issued=await issueSession(req,user)
         res.setHeader('Set-Cookie',issued.cookie);return json({user:{id:user.id,email:user.email,name:user.name,role:user.role},csrf:issued.csrf})
       }
@@ -599,6 +599,12 @@ export function createApp(db, config, transport) {
       }
       if (path.startsWith("/api/")) {
         const user = await auth(req)
+        if(req.method==='GET'&&path==='/api/admin/otp/status'){
+          if(user.role!=='admin')fail(403,'เฉพาะ Admin')
+          const email=await db.prepare("SELECT value FROM system_settings WHERE key='otp_delivery_email'").get()
+          const sms=await db.prepare("SELECT value FROM system_settings WHERE key='otp_delivery_sms'").get()
+          return json({channels:otpChannels(config,transport),email:email?JSON.parse(email.value):null,sms:sms?JSON.parse(sms.value):null})
+        }
         const operation=await operations(db,user,req,path,url,body)
         if(operation!==undefined)return json(operation)
         if (path === "/api/merchant/profile") {
