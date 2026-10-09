@@ -58,7 +58,7 @@ export function createLoginOtp(db,config,transport,fetchSms=fetch){
    try{
     if(channel==='email'&&config.thaiBulkSmsEmailOtpTemplateId){
      const response=await providerEmailOtp(config,fetchSms,'send',{template_uuid:config.thaiBulkSmsEmailOtpTemplateId,recipient_email:destination,payload:{}});
-     if(!response.ok||response.result.status!=='success'||typeof response.result.token!=='string'||!response.result.token||response.result.token.length>4096)throw Object.assign(Error('Email OTP provider rejected request'),{diagnostic:smsDiagnostic(config,response.status,response.result)});
+     if(!response.ok||!['success','waiting'].includes(response.result.status)||typeof response.result.token!=='string'||!response.result.token||response.result.token.length>4096)throw Object.assign(Error('Email OTP provider rejected request'),{diagnostic:smsDiagnostic(config,response.status,response.result)});
      await db.prepare('UPDATE login_otps SET code_hash=? WHERE id=?').run(encryptToken(config,response.result.token),id);
     }else if(channel==='email')await transport.sendMail({from:config.smtpFrom,to:destination,subject:'VillaCheck: รหัสเข้าสู่ระบบ',text:`รหัส OTP ของคุณคือ ${code} ใช้ได้ 5 นาที ห้ามให้รหัสนี้กับผู้อื่น`})
     else if(config.thaiBulkSmsOtpKey&&config.thaiBulkSmsOtpSecret){
