@@ -93,6 +93,8 @@ export async function startServer(env = process.env, { listen = true, databaseFa
       thaiBulkSmsApiKey: env.THAIBULKSMS_API_KEY,
       thaiBulkSmsApiSecret: env.THAIBULKSMS_API_SECRET,
       thaiBulkSmsSender: env.THAIBULKSMS_SENDER,
+      thaiBulkSmsOtpKey: env.THAIBULKSMS_OTP_KEY,
+      thaiBulkSmsOtpSecret: env.THAIBULKSMS_OTP_SECRET,
       lineClientId: env.LINE_CHANNEL_ID,
       lineClientSecret: env.LINE_CHANNEL_SECRET,
       googleClientId: env.GOOGLE_CLIENT_ID,

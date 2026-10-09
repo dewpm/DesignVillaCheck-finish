@@ -448,7 +448,7 @@ export function createApp(db, config, transport) {
       if(req.method==='POST'&&['/api/auth/otp/request','/api/auth/otp/verify'].includes(path)){
         checkOrigin(req);await rateLimit(req);const data=await body(req)
         if(path.endsWith('/request')){try{return json(await loginOtp.request(data))}catch(error){if(error.status===503)fail(503,error.message);throw error}}
-        const user=await loginOtp.verify(data);const issued=await issueSession(req,user)
+        let user;try{user=await loginOtp.verify(data)}catch(error){if(error.status===503)fail(503,error.message);throw error};const issued=await issueSession(req,user)
         res.setHeader('Set-Cookie',issued.cookie);return json({user:{id:user.id,email:user.email,name:user.name,role:user.role},csrf:issued.csrf})
       }
       if (
