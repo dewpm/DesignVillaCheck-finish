@@ -51,7 +51,8 @@ export function VillaQr({ villa }: { villa: MerchantVilla }) {
 
 function VillaPhotoInput({url,photo,onChange}:{url:string;photo:Document|null;onChange:(value:Document|null)=>void}){
  const [error,setError]=useState("");
- return <div><label>อัปโหลด / เปลี่ยนรูป Villa (JPG, PNG ไม่เกิน 2 MB)<input type="file" accept="image/jpeg,image/png" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;setError("");if(!["image/jpeg","image/png"].includes(f.type)||f.size>2*1024*1024){setError("เลือกรูป JPG หรือ PNG ไม่เกิน 2 MB");return;}try{const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=reject;r.readAsDataURL(f)});onChange({name:f.name,type:f.type,data});}catch{setError("อ่านรูปไม่สำเร็จ")}}}/></label>{(photo?.data||url)&&<img src={photo?.data||url} alt="รูป Villa ที่เลือก" style={{width:"100%",maxHeight:300,objectFit:"cover",borderRadius:12}}/>}{photo&&<button type="button" onClick={()=>onChange(null)}>ยกเลิกรูปที่เลือก</button>}{error&&<p role="alert">{error}</p>}</div>
+ const inputRef=useRef<HTMLInputElement>(null);
+ return <div><label>อัปโหลด / เปลี่ยนรูป Villa (JPG, PNG ไม่เกิน 2 MB)<input ref={inputRef} style={{display:"none"}} type="file" accept="image/jpeg,image/png" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;setError("");if(!["image/jpeg","image/png"].includes(f.type)||f.size>2*1024*1024){setError("เลือกรูป JPG หรือ PNG ไม่เกิน 2 MB");return;}try{const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=reject;r.readAsDataURL(f)});onChange({name:f.name,type:f.type,data});}catch{setError("อ่านรูปไม่สำเร็จ")}}}/></label><div className="button-row"><button type="button" className="outline-button" onClick={()=>inputRef.current?.click()}>Browse</button><span>{photo?.name||"JPG / PNG"}</span></div>{(photo?.data||url)&&<img src={photo?.data||url} alt="รูป Villa ที่เลือก" style={{width:"100%",maxHeight:300,objectFit:"cover",borderRadius:12}}/>}{photo&&<button type="button" onClick={()=>onChange(null)}>ยกเลิกรูปที่เลือก</button>}{error&&<p role="alert">{error}</p>}</div>
 }
 
 export default function Backoffice({
@@ -259,6 +260,7 @@ export default function Backoffice({
   const billing = page === "owner-package" || page === "admin-payments"
   const reviewing = page === "admin-review"
   const dashboard = page.endsWith("dashboard")
+  const editing = page === "owner-villa-edit"
   const list = store.villas.filter(
     (v) =>
       (v.name + v.merchant + v.email)
@@ -312,8 +314,8 @@ export default function Backoffice({
         แพ็กเกจผูกกับบัญชี Merchant · แต่ละ Villa มี QR ของตัวเองและต้องผ่าน Admin อนุมัติ
         · แพ็กเกจชำระเงินต้องยืนยันการชำระก่อนเปิดใช้ QR
       </div>
-      {!admin && <SubscriptionPanel store={store} chosenPlan={chosenPlan} setChosenPlan={setChosenPlan} renewalPlan={renewalPlan} setRenewalPlan={setRenewalPlan} busy={busy} perform={perform} onSubscribed={() => go("owner-add-villa")} />}
-      {!admin && store.villas.some(v => v.invoices.length > 0) && <section className="merchant-panel"><h2>การชำระแพ็กเกจบัญชี Merchant</h2><p>ชำระแพ็กเกจครั้งเดียว ครอบคลุม Villa ภายในจำนวนสิทธิ์ แต่ละแห่งมี QR ของตัวเอง</p>{store.villas.flatMap(v => v.invoices).map(invoice => <PaymentPanel key={invoice.id} invoice={invoice} admin={false} instructions={store.paymentInstructions} configured={store.paymentConfigured}
+      {!admin && (billing || dashboard || (adding && !store.subscription)) && <SubscriptionPanel store={store} chosenPlan={chosenPlan} setChosenPlan={setChosenPlan} renewalPlan={renewalPlan} setRenewalPlan={setRenewalPlan} busy={busy} perform={perform} onSubscribed={() => go("owner-add-villa")} />}
+      {!admin && billing && store.villas.some(v => v.invoices.length > 0) && <section className="merchant-panel"><h2>การชำระแพ็กเกจบัญชี Merchant</h2><p>ชำระแพ็กเกจครั้งเดียว ครอบคลุม Villa ภายในจำนวนสิทธิ์ แต่ละแห่งมี QR ของตัวเอง</p>{store.villas.flatMap(v => v.invoices).map(invoice => <PaymentPanel key={invoice.id} invoice={invoice} admin={false} instructions={store.paymentInstructions} configured={store.paymentConfigured}
                       demo={store.demoMode} busy={busy} perform={perform} />)}</section>}
       {message && (
         <div className="form-message" role="status">
@@ -411,6 +413,7 @@ export default function Backoffice({
         </form>
       ) : (
         <>
+          {!billing && !editing && <>
           <div className="merchant-toolbar">
             <input
               aria-label="ค้นหา Villa หรือ Merchant"
@@ -510,12 +513,13 @@ export default function Backoffice({
               </article>
             ))}
           </div>
+          </>}
           {active &&
             (reviewing ||
               page === "owner-villa-detail" ||
               page === "owner-villa-edit") && (
               <section className="merchant-panel merchant-detail">
-                {!admin&&<form className="portal-form" onSubmit={async e=>{e.preventDefault();try{await api(`/merchant/villas/${active.id}`,{...form,photo});setPhoto(null);await perform("/state",undefined,"Updated; pending document review");}catch(e){setMessage(e instanceof Error?e.message:"Update failed")}}}><h2>แก้ไขข้อมูล Villa</h2><VillaPhotoInput url={form.photoUrl} photo={photo} onChange={setPhoto}/><p>การแก้ข้อมูลจะส่งให้ Admin ตรวจใหม่ โดยคง QR เดิม</p>{(["name","province","merchant","phone","bankName","accountName","accountNumber","photoUrl"] as const).map(k=><label key={k}>{k}<input required={["name","province","merchant"].includes(k)} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></label>)}<button disabled={busy} className="primary-button">บันทึกและส่งตรวจใหม่</button></form>}
+                {!admin&&editing&&<form className="portal-form" onSubmit={async e=>{e.preventDefault();try{await api(`/merchant/villas/${active.id}`,{...form,photo});setPhoto(null);await perform("/state",undefined,"Updated; pending document review");}catch(e){setMessage(e instanceof Error?e.message:"Update failed")}}}><h2>แก้ไขข้อมูล Villa</h2><VillaPhotoInput url={form.photoUrl} photo={photo} onChange={setPhoto}/><p>การแก้ข้อมูลจะส่งให้ Admin ตรวจใหม่ โดยคง QR เดิม</p>{(["name","province","merchant","phone","bankName","accountName","accountNumber"] as const).map(k=><label key={k}>{k}<input required={["name","province","merchant"].includes(k)} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></label>)}<button disabled={busy} className="primary-button">บันทึกและส่งตรวจใหม่</button></form>}
                 {active.photoUrl&&<img src={active.photoUrl} alt={active.name} style={{width:"100%",maxHeight:360,objectFit:"cover",borderRadius:12}}/>}
                 <h2>เอกสารกรรมสิทธิ์ · {active.name}</h2>
                 <p>{active.document.name}</p>
@@ -604,7 +608,7 @@ export default function Backoffice({
                     </button>
                   </div>
                 )}
-                {active.qr && <VillaQr villa={active} />}
+                {!editing && active.qr && <VillaQr villa={active} />}
               </section>
             )}
           {(admin || billing) && (
