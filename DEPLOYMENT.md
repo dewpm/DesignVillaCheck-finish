@@ -329,3 +329,19 @@ Merchant lists and detail pages display the saved Villa photo. Add/edit forms ac
 ## Full Villa capacity and package upgrades
 
 At full capacity Merchant cannot add another Villa: backend enforces capacity and the Add Villa form is unavailable. Package page offers only active paid packages with a higher catalog order and greater Villa capacity. Highest tier has no further upgrade. POST /api/subscription/upgrade creates a payment request through the existing payment QR/manual-slip workflow; subscription capacity stays unchanged until Admin verifies payment atomically. Existing Villa QR identities are preserved. A pending invoice or suspended/cancelled subscription blocks another upgrade request. Upgrade invoice uses the target package's configured full price and billing duration; no prorated discount is calculated.
+
+## Sign in with Apple
+
+Apple web login requires Apple Developer Program access and a primary App ID with Sign in with Apple enabled. In Certificates, Identifiers & Profiles:
+
+1. Register/select an explicit App ID (e.g. com.villacheck.app), enable Sign in with Apple and set it as a primary App ID.
+2. Register a Services ID (e.g. com.villacheck.web); enable Sign in with Apple, Configure, select the primary App ID.
+3. Add domain design-villacheck.vercel.app and Return URL https://design-villacheck.vercel.app/api/auth/oauth/apple/callback. Save the configuration and identifier.
+4. Create a key with Sign in with Apple enabled for that App ID. Record Key ID and download the .p8 private key (download is available once); keep it private.
+5. Get Team ID from Membership details. In Vercel Production environment add APPLE_CLIENT_ID (Services ID), APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY (full .p8 contents, Secret). The other three IDs can be Config. Never use public prefixes. Redeploy.
+6. Test both Share My Email and Hide My Email; repeat login, cancellation and account collision. User name is supplied by Apple only on first authorization; the app stores it then, uses verified token subject on return visits, and does not silently link an existing email/password account.
+
+The backend creates a short-lived ES256 client-secret JWT from the private key, validates Apple's RS256 ID token using Apple's JWKS and validates issuer/audience/expiry/nonce. Web callback uses form POST with a Secure SameSite=None state cookie and an atomically consumed database state. No schema migration is needed. Apple is disabled until all four values and secure-cookie configuration are present. Real Apple authorization cannot be tested until the Developer configuration is completed. Local HTTP does not support Apple's real web callback; use the registered HTTPS domain.
+
+Official setup: https://developer.apple.com/help/account/capabilities/configure-sign-in-with-apple-for-the-web
+If sending mail to Apple private relay addresses, configure your authorized email sources in Apple Developer and the mail provider before relying on delivery.

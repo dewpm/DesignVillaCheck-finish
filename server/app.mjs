@@ -438,7 +438,7 @@ export function createApp(db, config, transport) {
         })
       if (
         req.method === "GET" &&
-        /^\/api\/auth\/oauth\/(google|facebook)\/start$/.test(path)
+        /^\/api\/auth\/oauth\/(google|facebook|line|apple)\/start$/.test(path)
       )
         await rateLimit(req)
       if (await oauth(req, res, url)) return

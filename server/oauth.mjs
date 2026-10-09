@@ -1,3 +1,4 @@
+import {appleClientSecret,verifyAppleToken,appleCallbackParams} from './apple-oauth.mjs'
 import { randomBytes, createHash, createHmac } from "node:crypto"
 import { createUser, transaction } from "./database.mjs"
 const digest = (value) => createHash("sha256").update(value).digest("hex")
@@ -14,6 +15,7 @@ export function safeReturn(value) {
 }
 export function oauthProviders(config) {
   return {
+    apple: Boolean(config.appleClientId && config.appleTeamId && config.appleKeyId && config.applePrivateKey && config.secureCookies),
     google: Boolean(config.googleClientId && config.googleClientSecret),
     line: Boolean(config.lineClientId && config.lineClientSecret),
     facebook: Boolean(
@@ -24,8 +26,8 @@ export function oauthProviders(config) {
   }
 }
 export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
-  const stateCookie = (state, age = 600) =>
-    `vc_oauth=${state}; HttpOnly; Path=/api/auth/oauth; SameSite=Lax; Max-Age=${age}${
+  const stateCookie = (state, age = 600, appleCookie = false) =>
+    `vc_oauth=${state}; HttpOnly; Path=/api/auth/oauth; SameSite=${appleCookie ? "None" : "Lax"}; Max-Age=${age}${
       config.secureCookies ? "; Secure" : ""
     }`
   async function getJson(url, options) {
@@ -39,9 +41,9 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
   }
   return async (req, res, url) => {
     const match = url.pathname.match(
-      /^\/api\/auth\/oauth\/(google|facebook|line)\/(start|callback)$/,
+      /^\/api\/auth\/oauth\/(google|facebook|line|apple)\/(start|callback)$/,
     )
-    if (!match || req.method !== "GET") return false
+    if (!match || (req.method !== "GET" && !(match[1] === "apple" && match[2] === "callback" && req.method === "POST"))) return false
     const [, provider, action] = match
     const enabled = oauthProviders(config)[provider]
     const redirect = (location) => {
@@ -56,9 +58,14 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
       failure("not_configured")
       return true
     }
+    const apple = provider === "apple"
+    if(apple && action === "callback"){
+      if(req.method!=="POST") { failure("invalid_state"); return true }
+      try{url.search= (await appleCallbackParams(req)).toString()}catch{failure("provider_failed");return true}
+    }
     const line = provider === "line"
     const google = provider === "google"
-    const clientId = line ? config.lineClientId : google ? config.googleClientId : config.facebookClientId
+    const clientId = apple ? config.appleClientId : line ? config.lineClientId : google ? config.googleClientId : config.facebookClientId
     const secret = line ? config.lineClientSecret : google
       ? config.googleClientSecret
       : config.facebookClientSecret
@@ -90,7 +97,7 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
           Date.now() + 600000,
         )
       const authUrl = new URL(
-        line ? "https://access.line.me/oauth2/v2.1/authorize" : google
+        apple ? "https://appleid.apple.com/auth/authorize" : line ? "https://access.line.me/oauth2/v2.1/authorize" : google
           ? "https://accounts.google.com/o/oauth2/v2/auth"
           : `https://www.facebook.com/${config.facebookVersion}/dialog/oauth`,
       )
@@ -98,7 +105,7 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
         client_id: clientId,
         redirect_uri: callback,
         response_type: "code",
-        scope: line ? "openid profile email" : google ? "openid email profile" : "email,public_profile",
+        scope: apple ? "name email" : line ? "openid profile email" : google ? "openid email profile" : "email,public_profile",
         state,
       }).toString()
       if (google || line) {
@@ -108,8 +115,9 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
         )
         authUrl.searchParams.set("code_challenge_method", "S256")
       }
-      if (line) authUrl.searchParams.set("nonce", verifier)
-      res.setHeader("Set-Cookie", stateCookie(state))
+      if (line || apple) authUrl.searchParams.set("nonce", verifier)
+      if(apple)authUrl.searchParams.set("response_mode","form_post")
+      res.setHeader("Set-Cookie", stateCookie(state,600,apple))
       redirect(authUrl.toString())
       return true
     }
@@ -123,7 +131,7 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
     }
     const flow = await db
       .prepare(
-        "SELECT * FROM oauth_states WHERE state_hash=? AND provider=? AND expires>?",
+        "DELETE FROM oauth_states WHERE state_hash=? AND provider=? AND expires>? RETURNING *",
       )
       .get(digest(state), provider, Date.now())
     if (!flow) {
@@ -146,16 +154,17 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
     try {
       const params = new URLSearchParams({
         client_id: clientId,
-        client_secret: secret,
+        client_secret: apple ? appleClientSecret(config) : secret,
         redirect_uri: callback,
         code,
       })
+      if(apple)params.set("grant_type","authorization_code")
       if (google || line) {
         params.set("grant_type", "authorization_code")
         params.set("code_verifier", flow.verifier)
       }
       const tokens = await getJson(
-        line ? "https://api.line.me/oauth2/v2.1/token" : google
+        apple ? "https://appleid.apple.com/auth/token" : line ? "https://api.line.me/oauth2/v2.1/token" : google
           ? "https://oauth2.googleapis.com/token"
           : `https://graph.facebook.com/${config.facebookVersion}/oauth/access_token`,
         {
@@ -167,7 +176,11 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
       if (typeof tokens.access_token !== "string" || !tokens.access_token)
         throw Error("provider_failed")
       let profile
-      if (line) {
+      if(apple){
+        profile=verifyAppleToken(tokens.id_token,await getJson("https://appleid.apple.com/auth/keys"),clientId,flow.verifier)
+        if(profile.email && ![true,"true"].includes(profile.email_verified))throw Error("email_required")
+        if(url.searchParams.has("user")){try{const first=JSON.parse(url.searchParams.get("user"));profile.name=[first.name?.firstName,first.name?.lastName].filter(v=>typeof v==='string').join(' ').slice(0,200)}catch{}}
+      } else if (line) {
         if (typeof tokens.id_token !== "string" || !tokens.id_token) throw Error("provider_failed")
         profile = await getJson("https://api.line.me/oauth2/v2.1/verify", {
           method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -193,7 +206,7 @@ export function createOAuth(db, config, issueSession, fetchProvider = fetch) {
         headers: { Authorization: `Bearer ${tokens.access_token}` },
       })
       }
-      const subject = google || line ? profile.sub : profile.id
+      const subject = google || line || apple ? profile.sub : profile.id
       if (typeof subject !== "string" || !subject || subject.length > 255)
         throw Error("provider_failed")
       if (google && profile.email_verified !== true)
