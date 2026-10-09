@@ -261,6 +261,7 @@ export default function Backoffice({
   const reviewing = page === "admin-review"
   const dashboard = page.endsWith("dashboard")
   const editing = page === "owner-villa-edit"
+  const detailPage = page === "owner-villa-detail"
   const list = store.villas.filter(
     (v) =>
       (v.name + v.merchant + v.email)
@@ -413,7 +414,7 @@ export default function Backoffice({
         </form>
       ) : (
         <>
-          {!billing && !editing && <>
+          {!billing && !editing && !detailPage && <>
           <div className="merchant-toolbar">
             <input
               aria-label="ค้นหา Villa หรือ Merchant"
@@ -519,8 +520,9 @@ export default function Backoffice({
               page === "owner-villa-detail" ||
               page === "owner-villa-edit") && (
               <section className="merchant-panel merchant-detail">
+                {!admin&&<div className="button-row"><button className="outline-button" onClick={()=>go("owner-villas")}>กลับรายการ Villa</button>{!editing&&<button className="primary-button" onClick={()=>showDetails(active,true)}>แก้ไขข้อมูล Villa / เปลี่ยนรูป</button>}</div>}
                 {!admin&&editing&&<form className="portal-form" onSubmit={async e=>{e.preventDefault();try{await api(`/merchant/villas/${active.id}`,{...form,photo});setPhoto(null);await perform("/state",undefined,"Updated; pending document review");}catch(e){setMessage(e instanceof Error?e.message:"Update failed")}}}><h2>แก้ไขข้อมูล Villa</h2><VillaPhotoInput url={form.photoUrl} photo={photo} onChange={setPhoto}/><p>การแก้ข้อมูลจะส่งให้ Admin ตรวจใหม่ โดยคง QR เดิม</p>{(["name","province","merchant","phone","bankName","accountName","accountNumber"] as const).map(k=><label key={k}>{k}<input required={["name","province","merchant"].includes(k)} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></label>)}<button disabled={busy} className="primary-button">บันทึกและส่งตรวจใหม่</button></form>}
-                {active.photoUrl&&<img src={active.photoUrl} alt={active.name} style={{width:"100%",maxHeight:360,objectFit:"cover",borderRadius:12}}/>}
+                {!editing&&active.photoUrl&&<img src={active.photoUrl} alt={active.name} style={{width:"100%",maxHeight:360,objectFit:"cover",borderRadius:12}}/>}
                 <h2>เอกสารกรรมสิทธิ์ · {active.name}</h2>
                 <p>{active.document.name}</p>
                 <div className="merchant-villa-meta">
