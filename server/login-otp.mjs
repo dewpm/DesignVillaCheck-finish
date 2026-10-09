@@ -15,12 +15,13 @@ export function otpDestination(channel,value){
 }
 const hash=(config,id,code)=>createHmac('sha256',config.otpSecret).update(id+':'+code).digest('hex')
 export function smsDiagnostic(config,status,result){
- const clean=v=>{let s=typeof v==='string'?v:String(v??'');for(const secret of [config.thaiBulkSmsApiKey,config.thaiBulkSmsApiSecret,config.otpSecret,Buffer.from((config.thaiBulkSmsApiKey||'')+':'+(config.thaiBulkSmsApiSecret||'')).toString('base64')])if(secret)s=s.split(secret).join('[redacted]');return s.replace(/\b\d{6,15}\b/g,'[redacted]').slice(0,400)}
+ const clean=v=>{let s=typeof v==='string'?v:typeof v==='object'&&v!==null?JSON.stringify(v):String(v??'');for(const secret of [config.thaiBulkSmsApiKey,config.thaiBulkSmsApiSecret,config.otpSecret,Buffer.from((config.thaiBulkSmsApiKey||'')+':'+(config.thaiBulkSmsApiSecret||'')).toString('base64')])if(secret)s=s.split(secret).join('[redacted]');return s.replace(/\b\d{6,15}\b/g,'[redacted]').slice(0,400)}
  const code=clean(result?.code||result?.error?.code||result?.error_code||'')
  const message=clean(result?.message||result?.error?.message||result?.error||'')
- const combined=code+' '+message
+ const names={'108':'ERROR_USER_TRIAL','116':'ERROR_INSUFFICIENT_CREDIT','110':'ERROR_SENDER','111':'ERROR_SENDER_NOT_FOUND'}
+ const combined=(names[code]||code)+' '+message
  const category=/ERROR_USER_TRIAL|trial member/i.test(combined)?'ERROR_USER_TRIAL':/INSUFFICIENT_CREDIT|insufficient credit/i.test(combined)?'ERROR_INSUFFICIENT_CREDIT':status===401||/AUTHENTICATION|UNAUTHORIZED/i.test(combined)?'AUTHENTICATION_ERROR':/SENDER|API_KEY_SUSPENDED|IP_NOT_ALLOWED|MSISDN/i.test(combined)?'SENDER_OR_CONFIG_ERROR':status>=500?'PROVIDER_SERVER_ERROR':'PROVIDER_REJECTED'
- return {httpStatus:status,errorCode:code||null,errorMessage:message||null,category}
+ return {httpStatus:status,errorCode:code||null,errorName:names[code]||null,errorMessage:message||null,category}
 }
 export async function probeSmsCredit(config,fetchProvider=fetch){
  const environment={apiKeyLoaded:Boolean(config.thaiBulkSmsApiKey),apiSecretLoaded:Boolean(config.thaiBulkSmsApiSecret),senderLoaded:Boolean(config.thaiBulkSmsSender),otpSecretLoaded:Boolean(config.otpSecret&&config.otpSecret.length>=32)}

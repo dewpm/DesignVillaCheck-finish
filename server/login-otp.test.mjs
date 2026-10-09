@@ -34,6 +34,7 @@ test('HTTP email delivery failure returns safe action message and Admin-only san
 test('SMS provider diagnostics classify errors and redact credentials; credit probe never sends SMS',async()=>{
  const {smsDiagnostic,probeSmsCredit}=await import('./login-otp.mjs');
  for(const [status,code,category] of [[403,'ERROR_USER_TRIAL','ERROR_USER_TRIAL'],[423,'ERROR_INSUFFICIENT_CREDIT','ERROR_INSUFFICIENT_CREDIT'],[401,'ERROR_AUTHENTICATION_FAILED','AUTHENTICATION_ERROR'],[400,'ERROR_SENDER','SENDER_OR_CONFIG_ERROR'],[503,'','PROVIDER_SERVER_ERROR']])assert.equal(smsDiagnostic(config,status,{code}).category,category);
+ assert.equal(smsDiagnostic(config,400,{code:110,error:{message:'Sender is invalid.'}}).category,'SENDER_OR_CONFIG_ERROR');assert.match(smsDiagnostic(config,400,{code:110,error:{message:'Sender is invalid.'}}).errorMessage,/Sender is invalid/);
  const safe=smsDiagnostic(config,400,{message:'test-key test-secret 0812345678'});assert.ok(!JSON.stringify(safe).includes('test-key'));assert.ok(!JSON.stringify(safe).includes('test-secret'));assert.ok(!JSON.stringify(safe).includes('0812345678'));
  const result=await probeSmsCredit(config,async(url,options)=>{assert.equal(url,'https://api-v2.thaibulksms.com/credit');assert.equal(options.method,undefined);return {ok:true,status:200,json:async()=>({remaining_credit:{standard:0,corporate:10}})}});assert.equal(result.authenticated,true);assert.equal(result.remainingCredit.corporate,10);
 });
