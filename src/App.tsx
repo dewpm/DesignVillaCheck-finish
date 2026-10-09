@@ -684,12 +684,12 @@ export default function App() {
     page === "owner-auth" ? <OwnerPackageAuth go={go} packageName={selectedPackage} onOwnerLogin={() => setOwnerLoggedIn(true)} /> :
     page === "owner-information" || page === "owner-profile" ? <MerchantProfile page={page} go={go} /> :
     page === "owner-registration" ? <OwnerRegistration go={go} packageName={selectedPackage} /> :
-    page === "owner-onboarding-villa" ? <Backoffice page={page} go={go} initialPackage={selectedPackage} /> :
+    page === "owner-onboarding-villa" ? <Backoffice page={page} go={go} initialPackage={selectedPackage} initialItem={selectedItem} /> :
     page === "owner-select-villa" ? <Backoffice page="owner-villas" go={go} /> :
     page === "package-confirmation" ? <Backoffice page="owner-package" go={go} /> :
     page === "package-request-pending" ? <Backoffice page="owner-package" go={go} /> :
-    isOwnerPage ? <Backoffice page={page} go={go} initialPackage={selectedPackage} /> :
-    isAdminPage ? <Backoffice page={page} go={go} initialPackage={selectedPackage} /> :
+    isOwnerPage ? <Backoffice page={page} go={go} initialPackage={selectedPackage} initialItem={selectedItem} /> :
+    isAdminPage ? <Backoffice page={page} go={go} initialPackage={selectedPackage} initialItem={selectedItem} /> :
     <UserPages page={page} go={go} reports={[]} selectedReference={selectedItem} />;
   const isStandalone = page === "scan" || page === "verify" || page === "login" || page === "owner-auth" || page === "owner-registration" || page === "owner-information" || page === "owner-onboarding-villa" || page === "owner-select-villa" || page === "package-confirmation" || page === "package-request-pending" || isOwnerPage || isAdminPage || isUserPage;
   const showPublicFooter = ["home", "directory", "detail", "pricing", "scan", "verify", "villa-report", "villa-report-success"].includes(page) || isPublicInfoPage;

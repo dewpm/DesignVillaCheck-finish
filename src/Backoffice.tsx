@@ -58,9 +58,11 @@ export default function Backoffice({
   page,
   go,
   initialPackage = "Trust Starter",
+  initialItem = "",
 }: {
   page: Page
-  go: (page: Page) => void
+  go: (page: Page, item?: string) => void
+  initialItem?: string
   initialPackage?: string
 }) {
   const admin = page.startsWith("admin-")
@@ -70,7 +72,7 @@ export default function Backoffice({
   const busyRef = useRef(false)
   const [chosenPlan, setChosenPlan] = useState(planId(initialPackage));
   const [renewalPlan, setRenewalPlan] = useState("starter");
-  const [selected, setSelected] = useState("")
+  const [selected, setSelected] = useState(initialItem)
   const [message, setMessage] = useState("")
   const [verificationLevel,setVerificationLevel]=useState("VERIFIED")
   const [reason, setReason] = useState("")
@@ -185,6 +187,13 @@ export default function Backoffice({
   }
   const [photo,setPhoto]=useState<Document|null>(null);
   useEffect(()=>setPhoto(null),[selected,page]);
+  useEffect(()=>{
+    const v=store?.villas.find(v=>v.id===initialItem);
+    if(!v)return;
+    setSelected(v.id);
+    setForm(current=>({...current,name:v.name,province:v.province,merchant:v.merchant,email:v.email,photoUrl:v.photoUrl||"",phone:v.phone,bankName:v.bankName,accountName:v.accountName,accountNumber:v.accountNumber,package:v.packageId}));
+    setVerificationLevel(v.status==="approved"?v.verificationLevel:"VERIFIED");
+  },[initialItem,store]);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!upload) {
@@ -257,13 +266,13 @@ export default function Backoffice({
         .includes(search.toLowerCase()) &&
       (filter === "all" || (billing ? v.invoices.some(i=>i.paymentStatus===filter) : v.status === filter)),
   )
-  const showDetails = (v: MerchantVilla) => {
+  const showDetails = (v: MerchantVilla, edit=false) => {
     setVerificationLevel(v.status === "approved" ? v.verificationLevel : "VERIFIED")
     setSelected(v.id)
     setForm({...form,name:v.name,province:v.province,merchant:v.merchant,email:v.email,photoUrl:v.photoUrl||"",phone:v.phone,bankName:v.bankName,accountName:v.accountName,accountNumber:v.accountNumber,package:v.packageId})
     setReason("")
     setUpload(null)
-    go(admin ? "admin-review" : "owner-villa-detail")
+    go(admin ? "admin-review" : edit ? "owner-villa-edit" : "owner-villa-detail",v.id)
   }
   return (
     <PortalShell role={admin ? "Admin" : "Merchant"} page={page} go={go}>
@@ -482,6 +491,7 @@ export default function Backoffice({
                   >
                     {admin ? "ตรวจเอกสาร / รายละเอียด" : "ดูเอกสารและ QR"}
                   </button>
+                  {!admin&&<button className="primary-button" onClick={()=>showDetails(v,true)}>แก้ไขข้อมูล Villa / เปลี่ยนรูป</button>}
                 </div>
                 {v.qr && <VillaQr villa={v} />}
                 {admin && v.status === "approved" &&
