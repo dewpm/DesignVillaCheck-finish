@@ -1,4 +1,4 @@
-import {createLoginOtp,otpChannels} from './login-otp.mjs'
+import {createLoginOtp,otpChannels,probeSmsCredit} from './login-otp.mjs'
 import {saveVillaPhoto} from './villa-photo.mjs'
 import {demoSlip,demoMode} from "./demo-payment.mjs"
 import {createReport, recordEvent, operations} from "./operations.mjs"
@@ -603,7 +603,7 @@ export function createApp(db, config, transport) {
           if(user.role!=='admin')fail(403,'เฉพาะ Admin')
           const email=await db.prepare("SELECT value FROM system_settings WHERE key='otp_delivery_email'").get()
           const sms=await db.prepare("SELECT value FROM system_settings WHERE key='otp_delivery_sms'").get()
-          return json({channels:otpChannels(config,transport),email:email?JSON.parse(email.value):null,sms:sms?JSON.parse(sms.value):null})
+          return json({channels:otpChannels(config,transport),email:email?JSON.parse(email.value):null,sms:sms?JSON.parse(sms.value):null,...(url.searchParams.get('probe')==='sms'?{smsProvider:await probeSmsCredit(config)}:{})})
         }
         const operation=await operations(db,user,req,path,url,body)
         if(operation!==undefined)return json(operation)

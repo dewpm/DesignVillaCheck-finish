@@ -14,6 +14,20 @@ export function otpDestination(channel,value){
  return v
 }
 const hash=(config,id,code)=>createHmac('sha256',config.otpSecret).update(id+':'+code).digest('hex')
+export function smsDiagnostic(config,status,result){
+ const clean=v=>{let s=typeof v==='string'?v:String(v??'');for(const secret of [config.thaiBulkSmsApiKey,config.thaiBulkSmsApiSecret,config.otpSecret,Buffer.from((config.thaiBulkSmsApiKey||'')+':'+(config.thaiBulkSmsApiSecret||'')).toString('base64')])if(secret)s=s.split(secret).join('[redacted]');return s.replace(/\b\d{6,15}\b/g,'[redacted]').slice(0,400)}
+ const code=clean(result?.code||result?.error?.code||result?.error_code||'')
+ const message=clean(result?.message||result?.error?.message||result?.error||'')
+ const combined=code+' '+message
+ const category=/ERROR_USER_TRIAL|trial member/i.test(combined)?'ERROR_USER_TRIAL':/INSUFFICIENT_CREDIT|insufficient credit/i.test(combined)?'ERROR_INSUFFICIENT_CREDIT':status===401||/AUTHENTICATION|UNAUTHORIZED/i.test(combined)?'AUTHENTICATION_ERROR':/SENDER|API_KEY_SUSPENDED|IP_NOT_ALLOWED|MSISDN/i.test(combined)?'SENDER_OR_CONFIG_ERROR':status>=500?'PROVIDER_SERVER_ERROR':'PROVIDER_REJECTED'
+ return {httpStatus:status,errorCode:code||null,errorMessage:message||null,category}
+}
+export async function probeSmsCredit(config,fetchProvider=fetch){
+ const environment={apiKeyLoaded:Boolean(config.thaiBulkSmsApiKey),apiSecretLoaded:Boolean(config.thaiBulkSmsApiSecret),senderLoaded:Boolean(config.thaiBulkSmsSender),otpSecretLoaded:Boolean(config.otpSecret&&config.otpSecret.length>=32)}
+ if(!environment.apiKeyLoaded||!environment.apiSecretLoaded)return {environment,category:'CONFIG_MISSING'}
+ try{const r=await fetchProvider('https://api-v2.thaibulksms.com/credit',{headers:{Authorization:'Basic '+Buffer.from(config.thaiBulkSmsApiKey+':'+config.thaiBulkSmsApiSecret).toString('base64'),Accept:'application/json'},signal:AbortSignal.timeout(15000),redirect:'error'});const result=await r.json();return {environment,...smsDiagnostic(config,r.status,result),authenticated:r.ok,category:r.ok?'OK':smsDiagnostic(config,r.status,result).category,remainingCredit:r.ok?result.remaining_credit:null}}
+ catch{return {environment,category:'NETWORK_OR_INVALID_RESPONSE'}}
+}
 export function createLoginOtp(db,config,transport,fetchSms=fetch){
  return {
   async request(data){
@@ -34,15 +48,15 @@ export function createLoginOtp(db,config,transport,fetchSms=fetch){
     else{
      const params=new URLSearchParams({msisdn:destination.slice(1),message:`VillaCheck OTP: ${code}. Expires in 5 minutes. Do not share.`,sender:config.thaiBulkSmsSender})
      const r=await fetchSms('https://api-v2.thaibulksms.com/sms',{method:'POST',headers:{Authorization:'Basic '+Buffer.from(config.thaiBulkSmsApiKey+':'+config.thaiBulkSmsApiSecret).toString('base64'),Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:params.toString(),signal:AbortSignal.timeout(15000),redirect:'error'})
-     if(!r.ok)throw Error('sms delivery failed')
      const result=await r.json()
+     if(!r.ok)throw Object.assign(Error('sms delivery failed'),{diagnostic:smsDiagnostic(config,r.status,result)})
      const accepted=result.phone_number_list?.some(p=>typeof p.number==='string'&&p.number.replace(/^\+/,'')===destination.slice(1)&&typeof p.message_id==='string'&&p.message_id.length>0)
-     if(!accepted)throw Error('sms recipient not accepted')
+     if(!accepted)throw Object.assign(Error('sms recipient not accepted'),{diagnostic:smsDiagnostic(config,r.status,{...result,message:result.bad_phone_number_list?.[0]?.message||result.message||'Recipient not accepted'})})
     }
    }catch(error){
     await db.prepare('UPDATE login_otps SET consumed=1 WHERE id=?').run(id)
     const reason=channel==='email'?({EAUTH:'SMTP_AUTH_FAILED',ETIMEDOUT:'SMTP_TIMEOUT',ECONNECTION:'SMTP_CONNECTION_FAILED',ESOCKET:'SMTP_CONNECTION_FAILED',EENVELOPE:'SMTP_RECIPIENT_OR_SENDER_REJECTED'}[error.code]||'EMAIL_DELIVERY_FAILED'):'SMS_DELIVERY_FAILED'
-    await db.prepare('INSERT INTO system_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('otp_delivery_'+channel,JSON.stringify({ok:false,reason,at:new Date().toISOString()}))
+    await db.prepare('INSERT INTO system_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('otp_delivery_'+channel,JSON.stringify({ok:false,reason,...(channel==='sms'?(error.diagnostic||{category:'NETWORK_OR_INVALID_RESPONSE'}):{}),at:new Date().toISOString()}))
     fail(503,channel==='email'?'ส่งอีเมล OTP ไม่สำเร็จ กรุณาใช้ช่องทางอื่นหรือลองใหม่ภายหลัง':'ส่ง SMS OTP ไม่สำเร็จ กรุณาใช้ช่องทางอื่นหรือลองใหม่ภายหลัง')
    }
    await db.prepare('INSERT INTO system_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('otp_delivery_'+channel,JSON.stringify({ok:true,at:new Date().toISOString()}))
