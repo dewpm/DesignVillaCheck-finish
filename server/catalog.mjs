@@ -1,3 +1,4 @@
+import {packageContent} from './package-content.mjs'
 import { packages } from "./database.mjs"
 export const levels = [
   "REGISTERED",
@@ -15,17 +16,13 @@ export async function seedCatalog(db) {
         id,
         plan.name,
         id,
-        "แพ็กเกจบัญชี Merchant",
+        packageContent[id]?.description || "แพ็กเกจบัญชี Merchant",
         plan.amount,
         "THB",
         "MONTHLY",
         id === "basic" ? 3 : 0,
         plan.capacity,
-        JSON.stringify([
-          "1 Villa = 1 QR",
-          "เอกสารต้องผ่าน Admin",
-          `รองรับ ${plan.capacity} Villa`,
-        ]),
+        JSON.stringify(packageContent[id]?.features || ["1 Villa = 1 QR", `รองรับ ${plan.capacity} Villa`]),
         id === "premium" ? "PREMIUM_VERIFIED" : "VERIFIED",
         id === "premium" ? 1 : 0,
         1,
