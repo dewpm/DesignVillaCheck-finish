@@ -3,7 +3,7 @@ import {createUser} from './database.mjs'
 const fail=(status,message)=>{throw Object.assign(Error(message),{status})}
 export function otpChannels(config,transport){
  const enabled=typeof config.otpSecret==='string'&&config.otpSecret.length>=32
- return {email:Boolean(enabled&&transport&&config.smtpFrom),sms:Boolean(enabled&&(config.thaiBulkSmsOtpKey||config.thaiBulkSmsOtpSecret?config.thaiBulkSmsOtpKey&&config.thaiBulkSmsOtpSecret:config.thaiBulkSmsApiKey&&config.thaiBulkSmsApiSecret&&config.thaiBulkSmsSender))}
+ return {email:Boolean(enabled&&(config.thaiBulkSmsEmailOtpTemplateId?config.thaiBulkSmsApiKey&&config.thaiBulkSmsApiSecret:transport&&config.smtpFrom)),sms:Boolean(enabled&&(config.thaiBulkSmsOtpKey||config.thaiBulkSmsOtpSecret?config.thaiBulkSmsOtpKey&&config.thaiBulkSmsOtpSecret:config.thaiBulkSmsApiKey&&config.thaiBulkSmsApiSecret&&config.thaiBulkSmsSender))}
 }
 export function otpDestination(channel,value){
  if(typeof value!=='string'||value.length>254)fail(400,'อีเมลหรือเบอร์โทรไม่ถูกต้อง')
@@ -21,6 +21,10 @@ async function providerOtp(config,fetchProvider,action,fields){
  const r=await fetchProvider('https://otp.thaibulksms.com/v2/otp/'+action,{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({key:config.thaiBulkSmsOtpKey,secret:config.thaiBulkSmsOtpSecret,...fields}).toString(),signal:AbortSignal.timeout(15000),redirect:'error'});
  const result=await r.json();return {ok:r.ok,status:r.status,result}
 }
+async function providerEmailOtp(config,fetchProvider,action,fields){
+ const r=await fetchProvider('https://email-api.thaibulksms.com/email/v1/otp/'+action,{method:'POST',headers:{Authorization:'Basic '+Buffer.from(config.thaiBulkSmsApiKey+':'+config.thaiBulkSmsApiSecret).toString('base64'),Accept:'application/json','Content-Type':'application/json'},body:JSON.stringify(fields),signal:AbortSignal.timeout(15000),redirect:'error'});
+ return {ok:r.ok,status:r.status,result:await r.json()}
+}
 export function smsDiagnostic(config,status,result){
  const clean=v=>{let s=typeof v==='string'?v:typeof v==='object'&&v!==null?JSON.stringify(v):String(v??'');for(const secret of [config.thaiBulkSmsApiKey,config.thaiBulkSmsApiSecret,config.thaiBulkSmsOtpKey,config.thaiBulkSmsOtpSecret,config.otpSecret,Buffer.from((config.thaiBulkSmsApiKey||'')+':'+(config.thaiBulkSmsApiSecret||'')).toString('base64')])if(secret)s=s.split(secret).join('[redacted]');return s.replace(/\b\d{6,15}\b/g,'[redacted]').slice(0,400)}
  const code=clean(result?.code||result?.error?.code||result?.error_code||'')
@@ -31,7 +35,7 @@ export function smsDiagnostic(config,status,result){
  return {httpStatus:status,errorCode:code||null,errorName:names[code]||null,errorMessage:message||null,category}
 }
 export async function probeSmsCredit(config,fetchProvider=fetch){
- const environment={apiKeyLoaded:Boolean(config.thaiBulkSmsApiKey),apiSecretLoaded:Boolean(config.thaiBulkSmsApiSecret),senderLoaded:Boolean(config.thaiBulkSmsSender),otpAppKeyLoaded:Boolean(config.thaiBulkSmsOtpKey),otpAppSecretLoaded:Boolean(config.thaiBulkSmsOtpSecret),smsMode:config.thaiBulkSmsOtpKey||config.thaiBulkSmsOtpSecret?'otp-api':'sms-api',otpSecretLoaded:Boolean(config.otpSecret&&config.otpSecret.length>=32)}
+ const environment={apiKeyLoaded:Boolean(config.thaiBulkSmsApiKey),apiSecretLoaded:Boolean(config.thaiBulkSmsApiSecret),senderLoaded:Boolean(config.thaiBulkSmsSender),otpAppKeyLoaded:Boolean(config.thaiBulkSmsOtpKey),otpAppSecretLoaded:Boolean(config.thaiBulkSmsOtpSecret),emailTemplateLoaded:Boolean(config.thaiBulkSmsEmailOtpTemplateId),emailMode:config.thaiBulkSmsEmailOtpTemplateId?'otp-api':'smtp',smsMode:config.thaiBulkSmsOtpKey||config.thaiBulkSmsOtpSecret?'otp-api':'sms-api',otpSecretLoaded:Boolean(config.otpSecret&&config.otpSecret.length>=32)}
  if(!environment.apiKeyLoaded||!environment.apiSecretLoaded)return {environment,category:'CONFIG_MISSING'}
  try{const r=await fetchProvider('https://api-v2.thaibulksms.com/credit',{headers:{Authorization:'Basic '+Buffer.from(config.thaiBulkSmsApiKey+':'+config.thaiBulkSmsApiSecret).toString('base64'),Accept:'application/json'},signal:AbortSignal.timeout(15000),redirect:'error'});const result=await r.json();return {environment,...smsDiagnostic(config,r.status,result),authenticated:r.ok,category:r.ok?'OK':smsDiagnostic(config,r.status,result).category,remainingCredit:r.ok?result.remaining_credit:null}}
  catch{return {environment,category:'NETWORK_OR_INVALID_RESPONSE'}}
@@ -52,7 +56,11 @@ export function createLoginOtp(db,config,transport,fetchSms=fetch){
     await db.prepare('INSERT INTO login_otps(id,channel,destination,code_hash,expires,created) VALUES (?,?,?,?,?,?)').run(id,channel,destination,hash(config,id,code),now+300000,now)
    })
    try{
-    if(channel==='email')await transport.sendMail({from:config.smtpFrom,to:destination,subject:'VillaCheck: รหัสเข้าสู่ระบบ',text:`รหัส OTP ของคุณคือ ${code} ใช้ได้ 5 นาที ห้ามให้รหัสนี้กับผู้อื่น`})
+    if(channel==='email'&&config.thaiBulkSmsEmailOtpTemplateId){
+     const response=await providerEmailOtp(config,fetchSms,'send',{template_uuid:config.thaiBulkSmsEmailOtpTemplateId,recipient_email:destination,payload:{}});
+     if(!response.ok||response.result.status!=='success'||typeof response.result.token!=='string'||!response.result.token||response.result.token.length>4096)throw Object.assign(Error('Email OTP provider rejected request'),{diagnostic:smsDiagnostic(config,response.status,response.result)});
+     await db.prepare('UPDATE login_otps SET code_hash=? WHERE id=?').run(encryptToken(config,response.result.token),id);
+    }else if(channel==='email')await transport.sendMail({from:config.smtpFrom,to:destination,subject:'VillaCheck: รหัสเข้าสู่ระบบ',text:`รหัส OTP ของคุณคือ ${code} ใช้ได้ 5 นาที ห้ามให้รหัสนี้กับผู้อื่น`})
     else if(config.thaiBulkSmsOtpKey&&config.thaiBulkSmsOtpSecret){
      const response=await providerOtp(config,fetchSms,'request',{msisdn:destination.slice(1)});
      if(!response.ok||response.result.status!=='success'||typeof response.result.token!=='string'||!response.result.token||response.result.token.length>4096)throw Object.assign(Error('OTP provider rejected request'),{diagnostic:smsDiagnostic(config,response.status,response.result)});
@@ -68,7 +76,7 @@ export function createLoginOtp(db,config,transport,fetchSms=fetch){
    }catch(error){
     await db.prepare('UPDATE login_otps SET consumed=1 WHERE id=?').run(id)
     const reason=channel==='email'?({EAUTH:'SMTP_AUTH_FAILED',ETIMEDOUT:'SMTP_TIMEOUT',ECONNECTION:'SMTP_CONNECTION_FAILED',ESOCKET:'SMTP_CONNECTION_FAILED',EENVELOPE:'SMTP_RECIPIENT_OR_SENDER_REJECTED'}[error.code]||'EMAIL_DELIVERY_FAILED'):'SMS_DELIVERY_FAILED'
-    await db.prepare('INSERT INTO system_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('otp_delivery_'+channel,JSON.stringify({ok:false,reason,...(channel==='sms'?(error.diagnostic||{category:'NETWORK_OR_INVALID_RESPONSE'}):{}),at:new Date().toISOString()}))
+    await db.prepare('INSERT INTO system_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('otp_delivery_'+channel,JSON.stringify({ok:false,reason,...(error.diagnostic?error.diagnostic:channel==='sms'||config.thaiBulkSmsEmailOtpTemplateId?{category:'NETWORK_OR_INVALID_RESPONSE'}:{}),at:new Date().toISOString()}))
     fail(503,channel==='email'?'ส่งอีเมล OTP ไม่สำเร็จ กรุณาใช้ช่องทางอื่นหรือลองใหม่ภายหลัง':'ส่ง SMS OTP ไม่สำเร็จ กรุณาใช้ช่องทางอื่นหรือลองใหม่ภายหลัง')
    }
    await db.prepare('INSERT INTO system_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('otp_delivery_'+channel,JSON.stringify({ok:true,at:new Date().toISOString()}))
@@ -81,11 +89,18 @@ export function createLoginOtp(db,config,transport,fetchSms=fetch){
     const row=await db.prepare('SELECT * FROM login_otps WHERE id=?').get(data.challengeId)
     if(!row||row.consumed||Number(row.expires)<=Date.now()||row.attempts>=5)return {invalid:true}
     let valid;
-    if(row.channel==='sms'&&row.code_hash.startsWith('tbs:')){
+    if(row.code_hash.startsWith('tbs:')){
+     if(row.channel==='email'){
+      if(!config.thaiBulkSmsApiKey||!config.thaiBulkSmsApiSecret)fail(503,'ยังไม่ได้ตั้งค่าการยืนยัน Email OTP');
+      let response;try{response=await providerEmailOtp(config,fetchSms,'verify',{token:decryptToken(config,row.code_hash),otp_code:data.code})}catch{fail(503,'เชื่อมต่อบริการยืนยัน OTP ไม่สำเร็จ กรุณาลองใหม่ภายหลัง')}
+      if(response.status>=500||[401,402,403,429].includes(response.status))fail(503,'บริการยืนยัน OTP ไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง');
+      valid=response.ok&&response.result.status==='success';
+     }else{
      if(!config.thaiBulkSmsOtpKey||!config.thaiBulkSmsOtpSecret)fail(503,'ยังไม่ได้ตั้งค่าการยืนยัน SMS OTP');
      let response;try{response=await providerOtp(config,fetchSms,'verify',{token:decryptToken(config,row.code_hash),pin:data.code})}catch{fail(503,'เชื่อมต่อบริการยืนยัน OTP ไม่สำเร็จ กรุณาลองใหม่ภายหลัง')}
      if(response.status>=500||response.status===429||response.status===401||response.status===403)fail(503,'บริการยืนยัน OTP ไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง');
      valid=response.ok&&response.result.status==='success';
+     }
     }else valid=timingSafeEqual(Buffer.from(row.code_hash,'hex'),Buffer.from(hash(config,row.id,data.code),'hex'))
     if(!valid){await db.prepare('UPDATE login_otps SET attempts=attempts+1 WHERE id=?').run(row.id);return {invalid:true}}
     await db.prepare('UPDATE login_otps SET consumed=1 WHERE id=?').run(row.id)
