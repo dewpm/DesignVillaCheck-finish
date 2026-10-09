@@ -143,7 +143,7 @@ Mutations require the existing CSRF header and same-origin session. Existing `/i
 
 New invoice fields: payment_status, verification_mode, currency (THB), external_transaction_id (unique), external_provider, updated_at. Existing paid_at, confirmed_by, proof_id, reference and reason provide verifiedAt, verifiedByAdminId, slipUrl and rejectionReason without duplicate data storage.
 
-Future integration goes into AutoPaymentVerificationStrategy in server/payment-verification.mjs, using the contract in payment-verification.d.ts. TODO: implement a provider that verifies authentic transaction, recipient, exact amount/currency; execute provider calls outside DB transactions with bounded timeout; atomically consume transaction ID and call confirmPayment only after rechecking current invoice status. Do not enable automatic activation until those checks and provider-specific integration tests exist. Provider errors must remain PENDING_REVIEW. The database-backed Admin toggle and payment-page QR are implemented in the business update below. NestJS/Prisma migration and bank-native expiring payment QR remain outstanding. Current review controls remain in the existing Admin Villa/payment panel.
+Future integration goes into AutoPaymentVerificationStrategy in server/payment-verification.mjs, using the contract in payment-verification.d.ts. TODO: implement a provider that verifies authentic transaction, recipient, exact amount/currency; execute provider calls outside DB transactions with bounded timeout; atomically consume transaction ID and call confirmPayment only after rechecking current invoice status. Do not enable automatic activation until those checks and provider-specific integration tests exist. Provider errors must remain PENDING_REVIEW. The database-backed Admin toggle and payment-page QR are implemented in the business update below. NestJS/Prisma migration is complete. Bank-native expiring payment QR remains outstanding; the current QR opens the payment page. Current review controls remain in the existing Admin Villa/payment panel.
 
 ## Business requirement update — implementation report
 
@@ -234,7 +234,7 @@ Updated: `server/app.mjs`, `server/database.mjs`, `server/index.mjs`, `server/po
 
 Validation for this update: PostgreSQL integration run passed **38/38 tests**, including the new business workflow tests and existing auth/OAuth/payment/rollback tests. `npx tsc --noEmit`, `npm run build`, JavaScript syntax checks and `git diff --check` passed. No dedicated lint command is configured. No browser consent/login or real SMTP delivery was exercised. `public/villa-placeholder.svg` is the new neutral image fallback; actual Villa photos use the Merchant-provided HTTPS URL. Legacy subscription.payments is an activation counter that includes the trial and is preserved for backward compatibility; it is not a financial transaction count.
 
-Stack migration validation: lint, frontend/backend typecheck and Next production build passed. PostgreSQL regression suite passed **41/41**, including real Next → Nest → Prisma HTTP requests, safe migration of a populated legacy schema and repeated deployment preserving the original Villa QR. npm dependency audit after compatible overrides reported 0 vulnerabilities. The repository has not been pushed or deployed; production Neon remains untouched.
+Stack migration validation: lint, frontend/backend typecheck and Next production build passed. PostgreSQL regression suite passed **41/41**, including real Next → Nest → Prisma HTTP requests, safe migration of a populated legacy schema and repeated deployment preserving the original Villa QR. npm dependency audit after compatible overrides reported 0 vulnerabilities. That stack-migration check preceded deployment. The current repository has since been pushed and deployed to Vercel with Neon migrations and dummy seeding.
 
 ## Dummy database for development and Vercel testing
 
@@ -242,7 +242,7 @@ Stack migration validation: lint, frontend/backend typecheck and Next production
 
 Dummy seed includes Merchant/User accounts, active/pending/change-requested/expired Villas, ownership PDFs and stable Villa QR codes. Bank details clearly say dummy; no invoice or mail is created. Seed is idempotent and does not reset existing account passwords or regenerate Villa QR values.
 
-For Vercel use the online Neon database, not the localhost DATABASE_URL. Set DATABASE_URL or keep VillaCheck_DATABASE_URL in Vercel; never upload the local .env to Vercel. To seed Neon, put its connection URL in local .env, set a strong DEMO_PASSWORD (12+ characters), then run `npm run db:deploy` and `npm run db:seed`. Public/cloud seeding requires DEMO_PASSWORD and creates only dummy Merchant/User accounts, not a public dummy Admin; use the configured real Admin account. Dummy data is not automatically added on every production build. Remove dummy records before accepting real production registrations.
+For Vercel use the online Neon database, not the localhost DATABASE_URL. Set DATABASE_URL or keep VillaCheck_DATABASE_URL in Vercel; never upload the local .env to Vercel. To seed Neon, put its connection URL in local .env, set a strong DEMO_PASSWORD (12+ characters), then run `npm run db:deploy` and `npm run db:seed`. Public/cloud seeding requires DEMO_PASSWORD and creates only dummy Merchant/User accounts, not a public dummy Admin; use the configured real Admin account. Current Vercel builds seed dummy data idempotently unless SEED_PUBLIC_DEMO_DATA=false; existing decisions, passwords and Villa QR values are preserved. Remove dummy records before accepting real production registrations.
 
 ## Public dummy photo deployment
 
@@ -303,3 +303,25 @@ Before replacing dummy data with actual data:
 5. Review service/privacy text and contact details for your actual operating policy. Test live OAuth and a controlled payment/email with the provider before opening real payments.
 
 Checks and reports, including Admin responses, persist across browser reloads and sign-ins. Passing tests with dummy data does not validate bank or SMTP credentials, or third-party OAuth consent settings.
+
+## Workflow audit — 2026-10-08
+
+Validation rerun against isolated local PostgreSQL test schemas: 55 tests passed, zero failures/skips; TypeScript and ESLint passed. Browser smoke checks covered 61 guest routes and 38 authenticated User/Merchant/Admin routes with zero JavaScript exceptions. These page checks verify rendering and API loading, not every possible click, camera or third-party consent dialog.
+
+Covered integration flows: registration and role/ownership guards; document upload/review; paid invoice and three-hour payment QR expiry/regeneration; slip rejection/resubmission and atomic manual approval; free trial; subscription expiry/renewal with permanent Villa QR; capacity per package; dynamic packages and typed leads; server-side guest masking; actual verification and Premium entitlement; persisted reports/checks; scoped analytics; QR suspension; dummy mail and AUTO fallback; repeat migrations and seeding.
+
+Production read-only checks: configuration endpoint succeeds with demoMode=true; public directory returns ten Villas with ten photos; unauthenticated Admin user endpoint returns HTTP 401. Provider configuration flags indicate credentials exist, not successful live OAuth consent.
+
+Remaining live checks: real Google/Facebook/LINE login and callback in configured provider consoles; real SMTP delivery; real bank-transfer QR and authentic transaction verification. AUTO is intentionally a future-phase placeholder. The retained first paid MONTHLY invoice covers three months; renewals cover one month. Confirm that commercial rule before accepting real payments. Camera scanning requires a physical-device check.
+
+### Additional interactive dummy checks
+
+Re-ran all 55 integration/regression tests against isolated PostgreSQL schemas (55 passed, zero skips), plus lint/typecheck. Browser interactions on the local dummy database passed: submit User report; reload tracking page with the same reference; submit pre-transfer check and display MATCHED; Admin marks that report RESOLVED and persists a public response without exposing internal notes/contact; Admin suspends and restores the same Villa QR; Admin edits Starter price and public package API reflects the update; Admin saves AUTO then restores MANUAL. Price and settings were restored; all browser mutations used local dummy data.
+
+Confirmed business rule: first paid MONTHLY package invoice covers three months, subsequent monthly renewals cover one month and retain the same Villa QR. This confirmation does not change QUARTERLY/YEARLY or configured free-trial duration.
+
+Mocked OAuth and mail/provider-error tests verify internal handling only. Dummy data cannot establish real provider authorization, actual email delivery, a bank credit, camera hardware behavior, or exhaustive operation of every browser control. No external bank transaction or real SMTP send was attempted in this audit.
+
+## Merchant Villa photos
+
+Merchant lists and detail pages display the saved Villa photo. Add/edit forms accept a JPG or PNG image up to 2 MB with a local preview. The backend checks MIME/signature/size and stores image bytes in PostgreSQL using the existing document storage, with a dedicated public image endpoint that only serves images explicitly linked as Villa photos. Ownership documents remain private. Photo edits follow the existing information-change review rule: pending Admin review, same permanent Villa QR. No new database migration is required.

@@ -1,3 +1,4 @@
+import {saveVillaPhoto} from './villa-photo.mjs'
 import { randomUUID } from 'node:crypto'
 import { trustDto } from './catalog.mjs'
 import { audit } from './database.mjs'
@@ -35,8 +36,8 @@ export async function operations(db,user,req,path,url,readBody){
   if(!villa)error(404,'ไม่พบ Villa')
   const values=['name','province','merchant','phone','bankName','accountName','accountNumber'].map(k=>clean(data[k]||'',k,200,['name','province','merchant'].includes(k)))
   const photo=clean(data.photoUrl||'','photo',2000,false)
-  if(photo&&!/^https:\/\//.test(photo)&&!/^\/demo\/villas\/villa-\d+\.jpg$/.test(photo))error(400,'Photo must be HTTPS')
-  await db.transaction(async()=>{await db.prepare("UPDATE villas SET name=?,province=?,merchant=?,phone=?,bank_name=?,account_name=?,account_number=?,photo_url=?,status='pending',verification_level='REGISTERED',reason='Information changed; pending Admin review' WHERE id=?").run(...values,photo,villa.id);await audit(db,user,'villa.update',villa.id)})
+  if(photo&&!/^\/api\/public\/villa-photo\/[a-f0-9-]+$/.test(photo)&&!/^https:\/\//.test(photo)&&!/^\/demo\/villas\/villa-\d+\.jpg$/.test(photo))error(400,'Photo must be HTTPS')
+  await db.transaction(async()=>{const storedPhoto=data.photo?await saveVillaPhoto(db,user.id,data.photo):photo;await db.prepare("UPDATE villas SET name=?,province=?,merchant=?,phone=?,bank_name=?,account_name=?,account_number=?,photo_url=?,status='pending',verification_level='REGISTERED',reason='Information changed; pending Admin review' WHERE id=?").run(...values,storedPhoto,villa.id);await audit(db,user,'villa.update',villa.id)})
   return {ok:true}
  }
  if(path==='/api/user/checks'&&req.method==='POST'){

@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { openTestDatabase } from './test-database.mjs'
@@ -49,6 +50,16 @@ test('persistent reports/checks, scoped analytics, QR controls and dummy payment
  await t.test('browsing telemetry does not consume the sign-in rate limit',async()=>{
   for(let i=0;i<35;i++)assert.equal((await request('/public/events',{qr:villa.qr,kind:'PROFILE_VIEW'})).status,200)
   assert.equal((await request('/auth/login',{email:'other-user@test.com',password:'UserPassword123'})).status,200)
+ })
+ await t.test('Merchant photo uploads persist, remain separate from private documents, and validate ownership/type',async()=>{
+  const image={name:'villa.jpg',type:'image/jpeg',data:'data:image/jpeg;base64,'+readFileSync('public/demo/villas/villa-1.jpg').toString('base64')};
+  const input={name:villa.name,province:villa.province,merchant:villa.merchant,phone:villa.phone,bankName:villa.bank_name,accountName:villa.account_name,accountNumber:villa.account_number,photo:image};
+  assert.equal((await request(`/merchant/villas/${villa.id}`,input,outsider)).status,404);
+  assert.equal((await request(`/merchant/villas/${villa.id}`,{...input,photo:{...image,data:'data:image/jpeg;base64,aGVsbG8='}},m)).status,400);
+  assert.equal((await request(`/merchant/villas/${villa.id}`,input,m)).status,200);
+  const saved=await db.prepare('SELECT photo_url,qr FROM villas WHERE id=?').get(villa.id);assert.equal(saved.qr,villa.qr);
+  const response=await fetch(base+saved.photo_url);assert.equal(response.status,200);assert.equal(response.headers.get('content-type'),'image/jpeg');assert.deepEqual(Buffer.from(await response.arrayBuffer()),readFileSync('public/demo/villas/villa-1.jpg'));
+  assert.equal((await fetch(base+'/api/public/villa-photo/'+villa.document_id)).status,404);
  })
  await t.test('Merchant edits require fresh document review but preserve QR identity',async()=>{
   assert.equal((await request(`/merchant/villas/${villa.id}`,{name:'Bad'},outsider)).status,404)

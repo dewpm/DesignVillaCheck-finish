@@ -1,3 +1,4 @@
+import {saveVillaPhoto} from './villa-photo.mjs'
 import {demoSlip,demoMode} from "./demo-payment.mjs"
 import {createReport, recordEvent, operations} from "./operations.mjs"
 import { adminBusiness } from "./admin-business.mjs"
@@ -384,6 +385,12 @@ export function createApp(db, config, transport) {
         }`
       const slipAction = path.match(/^\/api\/payments\/([a-f0-9-]+)\/slip$/)
       if (slipAction) path = `/api/invoices/${slipAction[1]}/proof`
+      const publicPhoto=path.match(/^\/api\/public\/villa-photo\/([a-f0-9-]+)$/)
+      if(req.method==='GET'&&publicPhoto){
+        const photo=await db.prepare('SELECT d.mime,d.bytes FROM documents d JOIN villas v ON v.photo_url=? AND v.owner_id=d.owner_id WHERE d.id=? AND d.name=?').get(path,publicPhoto[1],'villa-photo')
+        if(!photo||!['image/jpeg','image/png'].includes(photo.mime))fail(404,'ไม่พบรูป Villa')
+        res.writeHead(200,{'Content-Type':photo.mime});return res.end(Buffer.from(photo.bytes))
+      }
       const publicReport=path.match(/^\/api\/public\/reports\/(RPT-[A-Za-z0-9-]{1,64})$/)
       if(req.method === "GET" && publicReport){
         const report=await db.prepare("SELECT reference,status,public_note,user_id FROM support_reports WHERE reference=?").get(publicReport[1])
@@ -847,12 +854,12 @@ export function createApp(db, config, transport) {
                 "UPDATE villas SET phone=?,bank_name=?,account_name=?,account_number=? WHERE id=?",
               )
               .run(...contacts, id)
-            const photoUrl = data.photoUrl || ""
+            const photoUrl = data.photo ? await saveVillaPhoto(db,user.id,data.photo) : data.photoUrl || ""
             if (
               photoUrl &&
               (typeof photoUrl !== "string" ||
                 photoUrl.length > 2000 ||
-                !photoUrl.startsWith("https://"))
+                (!photoUrl.startsWith("https://") && !data.photo))
             )
               fail(400, "Photo URL ต้องเป็น HTTPS")
             await db

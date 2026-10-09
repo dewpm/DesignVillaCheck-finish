@@ -49,6 +49,11 @@ export function VillaQr({ villa }: { villa: MerchantVilla }) {
   )
 }
 
+function VillaPhotoInput({url,photo,onChange}:{url:string;photo:Document|null;onChange:(value:Document|null)=>void}){
+ const [error,setError]=useState("");
+ return <div><label>อัปโหลด / เปลี่ยนรูป Villa (JPG, PNG ไม่เกิน 2 MB)<input type="file" accept="image/jpeg,image/png" onChange={async e=>{const f=e.target.files?.[0];if(!f)return;setError("");if(!["image/jpeg","image/png"].includes(f.type)||f.size>2*1024*1024){setError("เลือกรูป JPG หรือ PNG ไม่เกิน 2 MB");return;}try{const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=reject;r.readAsDataURL(f)});onChange({name:f.name,type:f.type,data});}catch{setError("อ่านรูปไม่สำเร็จ")}}}/></label>{(photo?.data||url)&&<img src={photo?.data||url} alt="รูป Villa ที่เลือก" style={{width:"100%",maxHeight:300,objectFit:"cover",borderRadius:12}}/>}{photo&&<button type="button" onClick={()=>onChange(null)}>ยกเลิกรูปที่เลือก</button>}{error&&<p role="alert">{error}</p>}</div>
+}
+
 export default function Backoffice({
   page,
   go,
@@ -178,6 +183,8 @@ export default function Backoffice({
       setUploading(false)
     }
   }
+  const [photo,setPhoto]=useState<Document|null>(null);
+  useEffect(()=>setPhoto(null),[selected,page]);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!upload) {
@@ -190,11 +197,13 @@ export default function Backoffice({
         ...form,
         packageId: store?.subscription?.packageId,
         document: upload,
+        photo,
       },
       "ส่ง Villa ให้ Admin ตรวจสอบแล้ว",
     )
     if (next) {
       setSelected(next.createdId || "")
+      setPhoto(null)
       setUpload(null)
       setForm({
         name: "",
@@ -367,6 +376,7 @@ export default function Backoffice({
               </label>
             ))}
           </div>
+          <VillaPhotoInput url={form.photoUrl} photo={photo} onChange={setPhoto}/>
           <label className="merchant-upload">
             <strong>แนบหลักฐานการเป็นเจ้าของ Villa *</strong>
             <span>
@@ -437,6 +447,7 @@ export default function Backoffice({
           <div className="merchant-list">
             {list.map((v) => (
               <article className="merchant-panel merchant-villa" key={v.id}>
+                {v.photoUrl&&<img src={v.photoUrl} alt={v.name} style={{width:"100%",height:220,objectFit:"cover",borderRadius:12,marginBottom:16}}/>}
                 <div className="merchant-villa-top">
                   <div>
                     <small>
@@ -494,7 +505,8 @@ export default function Backoffice({
               page === "owner-villa-detail" ||
               page === "owner-villa-edit") && (
               <section className="merchant-panel merchant-detail">
-                {!admin&&<form className="portal-form" onSubmit={async e=>{e.preventDefault();try{await api(`/merchant/villas/${active.id}`,form);await perform("/state",undefined,"Updated; pending document review");}catch(e){setMessage(e instanceof Error?e.message:"Update failed")}}}><h2>แก้ไขข้อมูล Villa</h2><p>การแก้ข้อมูลจะส่งให้ Admin ตรวจใหม่ โดยคง QR เดิม</p>{(["name","province","merchant","phone","bankName","accountName","accountNumber","photoUrl"] as const).map(k=><label key={k}>{k}<input required={["name","province","merchant"].includes(k)} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></label>)}<button disabled={busy} className="primary-button">บันทึกและส่งตรวจใหม่</button></form>}
+                {!admin&&<form className="portal-form" onSubmit={async e=>{e.preventDefault();try{await api(`/merchant/villas/${active.id}`,{...form,photo});setPhoto(null);await perform("/state",undefined,"Updated; pending document review");}catch(e){setMessage(e instanceof Error?e.message:"Update failed")}}}><h2>แก้ไขข้อมูล Villa</h2><VillaPhotoInput url={form.photoUrl} photo={photo} onChange={setPhoto}/><p>การแก้ข้อมูลจะส่งให้ Admin ตรวจใหม่ โดยคง QR เดิม</p>{(["name","province","merchant","phone","bankName","accountName","accountNumber","photoUrl"] as const).map(k=><label key={k}>{k}<input required={["name","province","merchant"].includes(k)} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></label>)}<button disabled={busy} className="primary-button">บันทึกและส่งตรวจใหม่</button></form>}
+                {active.photoUrl&&<img src={active.photoUrl} alt={active.name} style={{width:"100%",maxHeight:360,objectFit:"cover",borderRadius:12}}/>}
                 <h2>เอกสารกรรมสิทธิ์ · {active.name}</h2>
                 <p>{active.document.name}</p>
                 <div className="merchant-villa-meta">
@@ -574,7 +586,8 @@ export default function Backoffice({
                             "ส่งเอกสารใหม่ให้ Admin ตรวจสอบแล้ว",
                           ))
                         )
-                          setUpload(null)
+                          setPhoto(null)
+      setUpload(null)
                       }}
                     >
                       ส่งตรวจสอบอีกครั้ง
