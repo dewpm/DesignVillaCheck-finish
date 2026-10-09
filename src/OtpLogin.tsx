@@ -1,0 +1,18 @@
+import {useEffect,useState} from "react";
+import {api,currentAccount} from "./api";
+import type {Account} from "./merchantStore";
+export default function OtpLogin({onAuthenticated}:{onAuthenticated:(account:Account)=>void}){
+ const [channel,setChannel]=useState<"sms"|"email">("sms"),[destination,setDestination]=useState(""),[code,setCode]=useState(""),[challenge,setChallenge]=useState(""),[expires,setExpires]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState(""),[retryAt,setRetryAt]=useState(0),[seconds,setSeconds]=useState(0),[ready,setReady]=useState(false),[channels,setChannels]=useState({email:false,sms:false});
+ useEffect(()=>{void api<{otp?:typeof channels}>("/config").then(v=>setChannels(v.otp||{email:false,sms:false})).catch(()=>setError("ตรวจช่องทาง OTP ไม่สำเร็จ กรุณาลองใหม่")).finally(()=>setReady(true))},[]);
+ useEffect(()=>{const tick=()=>setSeconds(Math.max(0,Math.ceil((retryAt-Date.now())/1000)));tick();const t=window.setInterval(tick,1000);return()=>clearInterval(t)},[retryAt]);
+ const request=async()=>{if(busy)return;setBusy(true);setError("");try{const result=await api<{challengeId:string;expiresAt:string;resendAfter:number}>("/auth/otp/request",{channel,destination});setChallenge(result.challengeId);setExpires(result.expiresAt);setCode("");setRetryAt(Date.now()+result.resendAfter*1000)}catch(e){setError(e instanceof Error?e.message:"ส่ง OTP ไม่สำเร็จ")}finally{setBusy(false)}};
+ const verify=async()=>{if(busy)return;setBusy(true);setError("");try{await api("/auth/otp/verify",{challengeId:challenge,code});onAuthenticated(await currentAccount())}catch(e){setError(e instanceof Error?e.message:"OTP ไม่ถูกต้อง")}finally{setBusy(false)}};
+ const reset=()=>{setChallenge("");setCode("");setError("")};
+ return <div className="login-otp"><div className="login-channel-tabs">{(["sms","email"] as const).map(c=><button key={c} type="button" aria-pressed={channel===c} disabled={busy} onClick={()=>{setChannel(c);setDestination("");reset()}}>{c==="sms"?"เบอร์โทรศัพท์":"อีเมล"}</button>)}</div><form className="login-email-form" onSubmit={e=>{e.preventDefault();void (challenge?verify():request())}}>
+ <label className="login-field"><span>{channel==="sms"?"TH +66":"อีเมล"}</span><input aria-label={channel==="sms"?"เบอร์โทรศัพท์":"อีเมลรับ OTP"} required type={channel==="sms"?"tel":"email"} autoComplete={channel==="sms"?"tel":"email"} readOnly={Boolean(challenge)} value={destination} onChange={e=>setDestination(e.target.value)} placeholder={channel==="sms"?"หมายเลขโทรศัพท์":"อีเมลของคุณ"}/></label>
+ {challenge&&<><p className="login-otp-note" role="status">ส่งรหัสไปยัง {destination} แล้ว · ใช้ได้ถึง {new Date(expires).toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit"})}</p><label className="login-field"><span>OTP</span><input aria-label="รหัส OTP" required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} placeholder="รหัส 6 หลัก" value={code} onChange={e=>setCode(e.target.value.replace(/\D/g,""))}/></label></>}
+ {error&&<p className="login-error" role="alert">{error}</p>}{ready&&!channels[channel]&&<p className="login-otp-note">{channel==="sms"?"SMS OTP ยังไม่พร้อมใช้งาน":"Email OTP ยังไม่พร้อมใช้งาน"} กรุณาใช้ช่องทางเข้าสู่ระบบด้านล่าง</p>}
+ <button className="login-submit" disabled={busy||!ready||(!challenge&&!channels[channel])}>{busy?"กำลังดำเนินการ…":challenge?"ยืนยัน OTP และเข้าสู่ระบบ":"รับรหัส OTP"}</button>
+ {challenge&&<div className="login-otp-actions"><button type="button" disabled={busy||seconds>0} onClick={()=>void request()}>{seconds?`ส่งใหม่ใน ${seconds} วินาที`:"ส่ง OTP ใหม่"}</button><button type="button" disabled={busy} onClick={reset}>เปลี่ยน{channel==="sms"?"เบอร์โทร":"อีเมล"}</button></div>}
+ </form></div>
+}

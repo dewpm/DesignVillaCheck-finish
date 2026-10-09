@@ -276,3 +276,15 @@ model villa_events {
  villas villas @relation(fields:[villa_id], references:[id], onDelete:NoAction, onUpdate:NoAction)
  @@index([villa_id,created],map:"events_villa_created")
 }
+
+model login_otps {
+  id String @id
+  channel String
+  destination String
+  code_hash String
+  expires BigInt
+  attempts Int @default(0)
+  consumed Int @default(0)
+  created BigInt
+  @@index([destination,created], map: "login_otps_destination_created")
+}

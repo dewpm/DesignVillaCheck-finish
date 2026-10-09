@@ -1,3 +1,4 @@
+import {createLoginOtp,otpChannels} from './login-otp.mjs'
 import {saveVillaPhoto} from './villa-photo.mjs'
 import {demoSlip,demoMode} from "./demo-payment.mjs"
 import {createReport, recordEvent, operations} from "./operations.mjs"
@@ -186,6 +187,7 @@ export function createApp(db, config, transport) {
       .run(new Date().toISOString(), user.id)
     return { csrf, cookie: cookie(token) }
   }
+  const loginOtp=createLoginOtp(db,config,transport,config.smsFetch||fetch)
   const oauth = createOAuth(
     db,
     config,
@@ -434,14 +436,21 @@ export function createApp(db, config, transport) {
           localAccounts: Boolean(config.seedDemo),
           paymentConfigured: (await demoMode(db,config)) || Boolean(config.paymentInstructions),
           oauth: oauthProviders(config),
+          otp: otpChannels(config,transport),
           demoMode: await demoMode(db,config),
         })
       if (
         req.method === "GET" &&
-        /^\/api\/auth\/oauth\/(google|facebook|line|apple)\/start$/.test(path)
+        /^\/api\/auth\/oauth\/(google|facebook|line)\/start$/.test(path)
       )
         await rateLimit(req)
       if (await oauth(req, res, url)) return
+      if(req.method==='POST'&&['/api/auth/otp/request','/api/auth/otp/verify'].includes(path)){
+        checkOrigin(req);await rateLimit(req);const data=await body(req)
+        if(path.endsWith('/request'))return json(await loginOtp.request(data))
+        const user=await loginOtp.verify(data);const issued=await issueSession(req,user)
+        res.setHeader('Set-Cookie',issued.cookie);return json({user:{id:user.id,email:user.email,name:user.name,role:user.role},csrf:issued.csrf})
+      }
       if (
         req.method === "POST" &&
         [
