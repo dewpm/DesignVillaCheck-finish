@@ -85,6 +85,7 @@ export function createLoginOtp(db,config,transport,fetchSms=fetch){
   async verify(data){
    if(typeof data.challengeId!=='string'||!/^[-a-f0-9]{36}$/.test(data.challengeId)||typeof data.code!=='string'||!/^\d{6}$/.test(data.code))fail(401,'OTP ไม่ถูกต้องหรือหมดอายุ')
    if(!config.otpSecret||config.otpSecret.length<32)fail(503,'OTP ยังไม่พร้อมใช้งาน')
+   let verificationDiagnostic;
    const result=await db.transaction(async()=>{
     const row=await db.prepare('SELECT * FROM login_otps WHERE id=?').get(data.challengeId)
     if(!row||row.consumed||Number(row.expires)<=Date.now()||row.attempts>=5)return {invalid:true}
@@ -94,6 +95,7 @@ export function createLoginOtp(db,config,transport,fetchSms=fetch){
       if(!config.thaiBulkSmsApiKey||!config.thaiBulkSmsApiSecret)fail(503,'ยังไม่ได้ตั้งค่าการยืนยัน Email OTP');
       let response;try{response=await providerEmailOtp(config,fetchSms,'verify',{token:decryptToken(config,row.code_hash),otp_code:data.code})}catch{fail(503,'เชื่อมต่อบริการยืนยัน OTP ไม่สำเร็จ กรุณาลองใหม่ภายหลัง')}
       if(response.status>=500||[401,402,403,429].includes(response.status))fail(503,'บริการยืนยัน OTP ไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง');
+      verificationDiagnostic=smsDiagnostic(config,response.status,response.result);
       valid=response.ok&&response.result.status==='success';
      }else{
      if(!config.thaiBulkSmsOtpKey||!config.thaiBulkSmsOtpSecret)fail(503,'ยังไม่ได้ตั้งค่าการยืนยัน SMS OTP');
@@ -113,6 +115,7 @@ export function createLoginOtp(db,config,transport,fetchSms=fetch){
     if(!user){user=await createUser(db,`${randomUUID()}@phone.villacheck.invalid`,randomBytes(48).toString('hex'),'สมาชิก VillaCheck','user');await db.prepare('UPDATE users SET phone=? WHERE id=?').run(row.destination,user.id);await db.prepare('INSERT INTO oauth_identities VALUES (?,?,?)').run('phone_otp',row.destination,user.id)}
     return {user}
    })
+   if(verificationDiagnostic)await db.prepare('INSERT INTO system_settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run('otp_verification_email',JSON.stringify({...verificationDiagnostic,accepted:!result.invalid,at:new Date().toISOString()}));
    if(result.invalid)fail(401,'OTP ไม่ถูกต้องหรือหมดอายุ')
    return result.user
   }

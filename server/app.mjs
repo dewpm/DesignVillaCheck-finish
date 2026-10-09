@@ -603,7 +603,8 @@ export function createApp(db, config, transport) {
           if(user.role!=='admin')fail(403,'เฉพาะ Admin')
           const email=await db.prepare("SELECT value FROM system_settings WHERE key='otp_delivery_email'").get()
           const sms=await db.prepare("SELECT value FROM system_settings WHERE key='otp_delivery_sms'").get()
-          return json({channels:otpChannels(config,transport),email:email?JSON.parse(email.value):null,sms:sms?JSON.parse(sms.value):null,...(url.searchParams.get('probe')==='sms'?{smsProvider:await probeSmsCredit(config)}:{})})
+          const verification=await db.prepare("SELECT value FROM system_settings WHERE key='otp_verification_email'").get();
+          return json({emailVerification:verification?JSON.parse(verification.value):null,channels:otpChannels(config,transport),email:email?JSON.parse(email.value):null,sms:sms?JSON.parse(sms.value):null,...(url.searchParams.get('probe')==='sms'?{smsProvider:await probeSmsCredit(config)}:{})})
         }
         const operation=await operations(db,user,req,path,url,body)
         if(operation!==undefined)return json(operation)
