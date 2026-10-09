@@ -32,7 +32,7 @@ export function smsDiagnostic(config,status,result){
  const names={'108':'ERROR_USER_TRIAL','116':'ERROR_INSUFFICIENT_CREDIT','110':'ERROR_SENDER','111':'ERROR_SENDER_NOT_FOUND'}
  const combined=(names[code]||code)+' '+message
  const category=/ERROR_USER_TRIAL|trial member/i.test(combined)?'ERROR_USER_TRIAL':/INSUFFICIENT_CREDIT|insufficient credit/i.test(combined)?'ERROR_INSUFFICIENT_CREDIT':status===401||/AUTHENTICATION|UNAUTHORIZED/i.test(combined)?'AUTHENTICATION_ERROR':/SENDER|API_KEY_SUSPENDED|IP_NOT_ALLOWED|MSISDN/i.test(combined)?'SENDER_OR_CONFIG_ERROR':status>=500?'PROVIDER_SERVER_ERROR':'PROVIDER_REJECTED'
- return {httpStatus:status,errorCode:code||null,errorName:names[code]||null,errorMessage:message||null,category}
+ return {httpStatus:status,errorCode:code||null,errorName:names[code]||null,errorMessage:message||null,category,responseFields:result&&typeof result==='object'?Object.fromEntries(Object.entries(result).map(([key,value])=>[key,typeof value])):{},hasProviderToken:typeof result?.token==='string'&&Boolean(result.token),providerStatus:typeof result?.status==='string'?clean(result.status):null}
 }
 export async function probeSmsCredit(config,fetchProvider=fetch){
  const environment={apiKeyLoaded:Boolean(config.thaiBulkSmsApiKey),apiSecretLoaded:Boolean(config.thaiBulkSmsApiSecret),senderLoaded:Boolean(config.thaiBulkSmsSender),otpAppKeyLoaded:Boolean(config.thaiBulkSmsOtpKey),otpAppSecretLoaded:Boolean(config.thaiBulkSmsOtpSecret),emailTemplateLoaded:Boolean(config.thaiBulkSmsEmailOtpTemplateId),emailMode:config.thaiBulkSmsEmailOtpTemplateId?'otp-api':'smtp',smsMode:config.thaiBulkSmsOtpKey||config.thaiBulkSmsOtpSecret?'otp-api':'sms-api',otpSecretLoaded:Boolean(config.otpSecret&&config.otpSecret.length>=32)}
