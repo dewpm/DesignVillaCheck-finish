@@ -768,6 +768,22 @@ export function createApp(db, config, transport) {
           })
           return res.end(Buffer.from(file.bytes))
         }
+        if(req.method==='POST'&&path==='/api/subscription/upgrade'){
+          if(user.role!=='merchant')fail(403,'Merchant only')
+          const data=await body(req)
+          await transaction(db,async()=>{
+            const sub=await getSubscription(db,user.id);if(!sub)fail(409,'No subscription')
+            if(['SUSPENDED','CANCELLED'].includes(sub.lifecycle))fail(409,'Subscription unavailable')
+            const current=await getPlan(db,sub.package_id),target=await getPlan(db,data.packageId)
+            if(!target.active||target.capacity<=current.capacity||target.sort_order<=current.sort_order||target.amount<=0)fail(409,'Select a higher package with more Villa capacity')
+            if(await db.prepare("SELECT id FROM invoices WHERE subscription_owner=? AND status!='paid'").get(user.id))fail(409,'Complete the pending payment first')
+            const villa=await db.prepare("SELECT * FROM villas WHERE owner_id=? AND status='approved' ORDER BY created LIMIT 1").get(user.id)
+            if(!villa)fail(409,'An approved Villa is required')
+            await subscriptionInvoice(db,villa,config.appUrl,target.id)
+            await audit(db,user,'subscription.upgrade.request',user.id)
+          })
+          json(await state(user));void worker.run();return
+        }
         if (req.method === "POST" && path === "/api/subscription") {
           if (user.role !== "merchant") fail(403, "เฉพาะ Merchant")
           const data = await body(req)

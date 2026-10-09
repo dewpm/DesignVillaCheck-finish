@@ -71,4 +71,22 @@ test('persistent reports/checks, scoped analytics, QR controls and dummy payment
   const plan=await getPlan(db,'starter');assert.equal((await request('/admin/packages/starter',{...plan,billingCycle:'QUARTERLY'},a)).status,200);assert.equal((await request('/packages')).value.packages.find(p=>p.id==='starter').billingCycle,'QUARTERLY')
   const p=(await request('/state',undefined,payer)).value.villas[0];await request(`/villas/${p.id}/renew`,{},payer);const invoice=(await request('/state',undefined,payer)).value.villas[0].invoices.find(i=>i.status!=='paid');assert.equal(invoice.months,3)
  })
+ await t.test('full capacity requires a paid upgrade and highest tier rejects further upgrade',async()=>{
+  await request('/subscription',{packageId:'starter'},outsider);
+  const input={name:'Upgrade Dummy Villa',province:'ชลบุรี',merchant:'Dummy Upgrade',email:'other-merchant@test.com',document:{name:'ownership.pdf',type:'application/pdf',data:'data:application/pdf;base64,'+Buffer.from('%PDF-1.4 dummy').toString('base64')}};
+  assert.equal((await request('/villas',input,outsider)).status,201);
+  assert.equal((await request('/villas',{...input,name:'Over capacity'},outsider)).status,409);
+  let state=(await request('/state',undefined,outsider)).value;const v=state.villas[0];await request(`/villas/${v.id}/review`,{status:'approved'},a);
+  const pay=async()=>{const invoice=(await request('/state',undefined,outsider)).value.villas[0].invoices.find(i=>i.status!=='paid');const slip=(await request(`/payments/${invoice.id}/demo-slip`,{},outsider)).value;assert.equal((await request(`/invoices/${invoice.id}/proof`,slip,outsider)).status,200);assert.equal((await request(`/invoices/${invoice.id}/confirm`,{},a)).status,200)};
+  await pay();const qr=(await request('/state',undefined,outsider)).value.villas[0].qr;
+  assert.equal((await request('/subscription/upgrade',{packageId:'pro'},outsider)).status,409);
+  assert.equal((await request('/subscription/upgrade',{packageId:'plus'},outsider)).status,200);
+  assert.equal((await request('/state',undefined,outsider)).value.subscription.capacity,1);
+  assert.equal((await request('/villas',{...input,name:'Before upgrade payment'},outsider)).status,409);
+  assert.equal((await request('/subscription/upgrade',{packageId:'premium'},outsider)).status,409);
+  await pay();state=(await request('/state',undefined,outsider)).value;assert.equal(state.subscription.capacity,2);assert.equal(state.villas[0].qr,qr);
+  assert.equal((await request('/villas',{...input,name:'After upgrade payment'},outsider)).status,201);
+  assert.equal((await request('/subscription/upgrade',{packageId:'premium'},m)).status,409);
+ })
+
 })

@@ -315,6 +315,7 @@ export default function Backoffice({
         แพ็กเกจผูกกับบัญชี Merchant · แต่ละ Villa มี QR ของตัวเองและต้องผ่าน Admin อนุมัติ
         · แพ็กเกจชำระเงินต้องยืนยันการชำระก่อนเปิดใช้ QR
       </div>
+      {!admin&&store.subscription&&store.subscription.used>=store.subscription.capacity&&!billing&&<section className="merchant-panel"><p>ใช้สิทธิ์ครบ {store.subscription.used}/{store.subscription.capacity} Villa แล้ว ไม่สามารถเพิ่ม Villa ได้</p><button className="outline-button" onClick={()=>go("owner-package")}>ดูสิทธิ์แพ็กเกจและตัวเลือกอัปเกรด</button></section>}
       {!admin && (billing || dashboard || (adding && !store.subscription)) && <SubscriptionPanel store={store} chosenPlan={chosenPlan} setChosenPlan={setChosenPlan} renewalPlan={renewalPlan} setRenewalPlan={setRenewalPlan} busy={busy} perform={perform} onSubscribed={() => go("owner-add-villa")} />}
       {!admin && billing && store.villas.some(v => v.invoices.length > 0) && <section className="merchant-panel"><h2>การชำระแพ็กเกจบัญชี Merchant</h2><p>ชำระแพ็กเกจครั้งเดียว ครอบคลุม Villa ภายในจำนวนสิทธิ์ แต่ละแห่งมี QR ของตัวเอง</p>{store.villas.flatMap(v => v.invoices).map(invoice => <PaymentPanel key={invoice.id} invoice={invoice} admin={false} instructions={store.paymentInstructions} configured={store.paymentConfigured}
                       demo={store.demoMode} busy={busy} perform={perform} />)}</section>}
@@ -362,7 +363,7 @@ export default function Backoffice({
           </div>
         </>
       )}
-      {adding && store.subscription ? (
+      {adding && store.subscription && store.subscription.used >= store.subscription.capacity ? <section className="merchant-panel"><h2>สิทธิ์ Villa เต็มแล้ว</h2><p>ไม่สามารถเพิ่ม Villa ได้ กรุณาดูตัวเลือกอัปเกรดที่หน้า Package</p></section> : adding && store.subscription ? (
         <form className="portal-form merchant-panel" onSubmit={submit}>
           <h2>ข้อมูลที่พักและ Merchant</h2>
           <div className="merchant-form-grid">

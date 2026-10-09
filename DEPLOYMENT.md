@@ -325,3 +325,7 @@ Mocked OAuth and mail/provider-error tests verify internal handling only. Dummy 
 ## Merchant Villa photos
 
 Merchant lists and detail pages display the saved Villa photo. Add/edit forms accept a JPG or PNG image up to 2 MB with a local preview. The backend checks MIME/signature/size and stores image bytes in PostgreSQL using the existing document storage, with a dedicated public image endpoint that only serves images explicitly linked as Villa photos. Ownership documents remain private. Photo edits follow the existing information-change review rule: pending Admin review, same permanent Villa QR. No new database migration is required.
+
+## Full Villa capacity and package upgrades
+
+At full capacity Merchant cannot add another Villa: backend enforces capacity and the Add Villa form is unavailable. Package page offers only active paid packages with a higher catalog order and greater Villa capacity. Highest tier has no further upgrade. POST /api/subscription/upgrade creates a payment request through the existing payment QR/manual-slip workflow; subscription capacity stays unchanged until Admin verifies payment atomically. Existing Villa QR identities are preserved. A pending invoice or suspended/cancelled subscription blocks another upgrade request. Upgrade invoice uses the target package's configured full price and billing duration; no prorated discount is calculated.
